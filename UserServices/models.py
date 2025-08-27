@@ -17,7 +17,7 @@ class User(AbstractUser):
         Property, related_name='assigned_users', blank=True
     )
     phone = models.CharField(max_length=20, unique=True, blank=True, null=True)
-    added_by_user_id=models.ForeignKey('self',on_delete=models.CASCADE,blank=True,null=True,related_name='added_by_user_id_user')
+    added_by_user_id=models.ForeignKey('self',on_delete=models.SET_NULL,blank=True,null=True,related_name='added_by_user_id_user')
     department = models.CharField(max_length=50, blank=True, null=True, choices=(('FO', 'FO'), ('HK', 'HK'), ('TECHNICAL', 'TECHNICAL'), ('DG', 'DG'), ('HR', 'HR'), ('IT', 'IT'), ('SALE', 'SALE'), ('FINCANCE', 'FINCANCE')))
     currency=models.CharField(max_length=50, blank=True, null=True, default='EUR',choices=(('XAF','XAF'), ('USD','USD'),('INR','INR'),('EUR','EUR'),('GBP','GBP'),('AUD','AUD'),('CAD','CAD'),('JPY','JPY'),('CNY','CNY'),('RUB','RUB'),('BRL','BRL'),('ZAR','ZAR'),('NGN','NGN'),('MXN','MXN'),('ARS','ARS'),('CHF','CHF'),('SEK','SEK'),('NOK','NOK'),('DKK','DKK'),('PLN','PLN'),('CZK','CZK'),('TRY','TRY'),('UAH','UAH'),('HUF','HUF'),('RON','RON'),('BGN','BGN'),('HRK','HRK'),('SLO','SLO'),('SK','SK'),('LT','LT'),('LV','LV'),('EE','EE'),('IE','IE'),('SC','SC'),('WL','WL'),('NI','NI'),('NZ','NZ'),('SGD','SGD'),('MYR','MYR'),('THB','THB'),('IDR','IDR'),('PHP','PHP'),('VND','VND'),('KRW','KRW'),('KPW','KPW'),('TWD','TWD'),('HKD','HKD'),('MOP','MOP'),('BDT','BDT'),('PKR','PKR'),('LKR','LKR'),('NPR','NPR'),('BTN','BTN'),('MVR','MVR'),('AFN','AFN'),('IRR','IRR'),('IQD','IQD'),('SYP','SYP'),('LBN','LBN')))
     created_at=models.DateTimeField(auto_now_add=True)
@@ -31,7 +31,7 @@ class Guest(models.Model):
     user = models.OneToOneField(User, null=True, on_delete=models.CASCADE)
     idCard = models.JSONField(blank=True, null=True)
     def __str__(self):
-        return str(self.user)
+        return f"{self.user.get_full_name() if self.user else 'Anonymous'}"
 
     def save(self, *args, **kwargs):
         if self.user and self.user.role != 'guest':
@@ -61,7 +61,7 @@ class StaffSchedule(models.Model):
     hours = models.DecimalField(max_digits=4, decimal_places=1)
     week_number = models.PositiveIntegerField()
     date = models.DateField(null=True, blank=True)
-    added_by_user_id=models.ForeignKey(User, on_delete=models.CASCADE,blank=True,null=True,related_name='added_by_user_id_schedule')
+    added_by_user_id=models.ForeignKey(User, on_delete=models.SET_NULL,blank=True,null=True,related_name='added_by_user_id_schedule')
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

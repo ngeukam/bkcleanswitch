@@ -3,7 +3,7 @@ from rest_framework import serializers
 from cleanswitch.Helpers import createParsedCreatedAtUpdatedAt
 from UserServices.models import Guest, User
 from PropertyServices.Serializers import PropertySimpleSerializer
-from .models import Apartment, Booking
+from .models import Apartment, Booking, Refund
 from django.contrib.auth.hashers import make_password
 from django.utils import timezone
 from django.db.models import Q
@@ -71,7 +71,7 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['id', 'username', 'first_name', 'last_name', 'fullName', 'email', 'role', 'phone', 'properties_assigned', 'password', 'department', 'is_active', 'created_at']
         read_only_fields = ['id', 'role']
     def get_fullName(self, obj):
-        return f'{obj.first_name} {obj.last_name}'
+        return obj.get_full_name()
      
 class GuestSerializer(serializers.ModelSerializer):
     user = UserSerializer()
@@ -370,3 +370,29 @@ class BookingCreateSerializer(serializers.ModelSerializer):
         )
 
         return booking
+    
+class RefundSerializer(serializers.ModelSerializer):
+    guest = GuestSerializer(read_only=True)
+    reservation = BookingListSerializer(read_only=True)
+    processed_by_name = serializers.CharField(source='processed_by.get_full_name', read_only=True)
+    
+    class Meta:
+        model = Refund
+        fields = [
+            'id', 'guest', 'reservation',
+            'amount', 'reason', 'status', 'processed_at', 'created_at', 'updated_at',
+            'processed_by', 'processed_by_name', 'updated_by'
+        ]
+        read_only_fields = ['id', 'created_at', 'updated_at', 'processed_at']
+    
+    def validate_amount(self, value):
+        if value and value <= 0:
+            raise serializers.ValidationError("Amount must be greater than zero.")
+        return value
+    
+    def validate(self, data):
+        # Prevent editing processed refunds
+        instance = self.instance
+        if instance and instance.status not in ['pending']:
+            raise serializers.ValidationError("Cannot edit a processed refund.")
+        return data

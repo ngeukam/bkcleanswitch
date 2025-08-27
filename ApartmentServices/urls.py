@@ -10,5 +10,8 @@ urlpatterns = [
     path('available/apartments/', ApartmentController.ListAvailableApartmentAPIView.as_view(), name='available-apartments'),
     path('apartments/mixed-up/', ApartmentController.ListApartmentAPIView.as_view(), name='apartments-mixed-up'),
     path('bookings/', ApartmentController.BookingListAPIView.as_view(), name='bookings-list'),
+    path('bookings/<int:pk>/process_refund/', ApartmentController.BookingRefundAPIView.as_view(), name='booking-process-refund'),
+    path('refunds/', ApartmentController.RefundListUpdateAPIView.as_view(), name='refunds'),
+    path('refunds/<int:pk>/', ApartmentController.RefundRetrieveUpdateDeleteAPIView.as_view(), name='refund-retrieve-update'),
 
 ]

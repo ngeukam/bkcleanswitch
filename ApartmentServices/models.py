@@ -43,9 +43,9 @@ class Booking(models.Model):
     apartment = models.ForeignKey(Apartment, on_delete=models.CASCADE, null=True, related_name='apartment_booking')
     guest = models.ForeignKey('UserServices.Guest', null=True, on_delete=models.CASCADE)
     dateOfReservation = models.DateTimeField(default=timezone.now)
-    added_by_user_id = models.ForeignKey('UserServices.User', on_delete=models.CASCADE, blank=True, null=True, related_name='added_by_user_id_booking')
-    check_in_by_user_id=models.ForeignKey('UserServices.User',on_delete=models.CASCADE,blank=True,null=True,related_name='check_in_by_user_id_booking')
-    check_out_by_user_id=models.ForeignKey('UserServices.User',on_delete=models.CASCADE,blank=True,null=True,related_name='check_out_by_user_id_booking')
+    added_by_user_id = models.ForeignKey('UserServices.User', on_delete=models.SET_NULL, blank=True, null=True, related_name='added_by_user_id_booking')
+    check_in_by_user_id=models.ForeignKey('UserServices.User',on_delete=models.SET_NULL,blank=True,null=True,related_name='check_in_by_user_id_booking')
+    check_out_by_user_id=models.ForeignKey('UserServices.User',on_delete=models.SET_NULL,blank=True,null=True,related_name='check_out_by_user_id_booking')
     status = models.CharField(max_length=50, choices=STATUS_TYPES, default='upcoming')
     startDate = models.DateTimeField()
     endDate = models.DateTimeField()
@@ -84,7 +84,18 @@ class Dependees(models.Model):
 class Refund(models.Model):
     guest = models.ForeignKey('UserServices.Guest', null=True, on_delete=models.CASCADE)
     reservation = models.ForeignKey(Booking, on_delete=models.CASCADE)
+    amount =  models.FloatField(blank=True, null=True)
     reason = models.TextField()
+    processed_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    status = models.CharField(max_length=20, choices=(
+        ('pending', 'Pending'),
+        ('approved', 'Approved'),
+        ('rejected', 'Rejected')
+    ), default='pending')
+    processed_by = models.ForeignKey('UserServices.User', null=True, blank=True, on_delete=models.SET_NULL, related_name='refund_processed_by')
+    updated_by = models.ForeignKey('UserServices.User', null=True, blank=True, on_delete=models.SET_NULL, related_name='refund_updated_by')
 
     def __str__(self):
         return str(self.guest)

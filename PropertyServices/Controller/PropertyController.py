@@ -26,11 +26,9 @@ class CreateListPropertyAPIView(ListCreateAPIView):
     def get_queryset(self):
         user = self.request.user
         if user.role == 'admin' or user.is_superuser == True:
-            return Property.objects.all().order_by('-created_at')
-        elif user.role == 'receptionist':
-            return user.properties_assigned.filter(is_active=True).order_by('-created_at')
+            return Property.objects.all()
         else :
-            return user.properties_assigned.filter(is_active=True).order_by('-created_at')
+            return user.properties_assigned.filter(is_active=True)
 
     def perform_create(self, serializer):
         if self.request.user.role != 'admin':
@@ -172,11 +170,15 @@ class TaskTemplateListByPropertyAPIView(ListAPIView):
     def get_queryset(self):
         user = self.request.user
         property_id = self.kwargs.get('property_id')
-        property = get_object_or_404(Property, id=property_id)      
-        if user.role == "manager":
-            tasks_template = property.property_task_template.filter(active=True)
-        elif user.role == "admin" or user.is_superuser == True:
-            tasks_template = property.property_task_template.all()
+        property_obj = get_object_or_404(Property, id=property_id)
+        # Check if user has access to this property
+        if user.role != 'admin' and not user.is_superuser:
+            if not user.properties_assigned.filter(id=property_obj.id).exists():
+                raise PermissionDenied("You don't have access to this property")     
+        if user.role == "admin" or user.is_superuser == True:
+            tasks_template = property_obj.property_task_template.all()
+        else:
+            tasks_template = property_obj.property_task_template.filter(active=True)
         return tasks_template
     
     @CommonListAPIMixin.common_list_decorator(TaskTemplateSerializer)
@@ -210,7 +212,7 @@ class AvailableApartmentListByPropertyAPIView(ListAPIView):
 class RetrieveUpdateDeletePropertyAPIView(RetrieveUpdateDestroyAPIView):
     queryset = Property.objects.all()
     serializer_class = PropertySerializer
-    permission_classes = [IsAuthenticated, IsAdmin]
+    permission_classes = [IsAuthenticated, IsReceptionist]
     pagination_class = None
 
 class PropertyStatsAPIView(APIView):

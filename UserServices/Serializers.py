@@ -15,7 +15,7 @@ class UserSerializer(serializers.ModelSerializer):
         fields = ['id', 'username', 'first_name', 'last_name', 'fullName', 'email', 'role', 'phone', 'properties_assigned', 'password', 'department', 'is_active', 'created_at']
         read_only_fields = ['id', 'role']
     def get_fullName(self, obj):
-        return f'{obj.first_name} {obj.last_name}'
+        return obj.get_full_name()
     
 @createParsedCreatedAtUpdatedAt
 class UserSerializerWithFilters(serializers.ModelSerializer):
@@ -38,7 +38,7 @@ class StaffScheduleSerializer(serializers.ModelSerializer):
         model = StaffSchedule
         fields = '__all__'
     def get_fullName(self, obj):
-        return f'{obj.staff.first_name} {obj.staff.last_name}'
+        return obj.staff.get_full_name()
     
 class UserPlanningSerializer(serializers.ModelSerializer):
     fullName = serializers.SerializerMethodField()
@@ -48,7 +48,7 @@ class UserPlanningSerializer(serializers.ModelSerializer):
         fields = ['id', 'username', 'fullName', 'department']
     
     def get_fullName(self, obj):
-        return f'{obj.first_name} {obj.last_name}'
+        return obj.get_full_name()
 
 class PayRuleSerializer(serializers.ModelSerializer):
     class Meta:
@@ -66,7 +66,7 @@ class SalarySerializer(serializers.ModelSerializer):
         fields = '__all__'
 
     def get_user_fullName(self, obj):
-        return f'{obj.user.first_name} {obj.user.last_name}'
+        return obj.user.get_full_name()
     
     def get_user_role(self, obj):
         return f'{obj.user.role}'

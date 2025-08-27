@@ -813,7 +813,7 @@ class CompletedTaskSalaryPreviewAPIView(APIView):
             results.append({
                 "user_id": user.id,
                 "propertyInfo": f"{property_obj.name} - {property_obj.address}" if property_obj else None,
-                "fullName": f"{user.last_name} {user.first_name}",
+                "fullName": user.get_full_name(),
                 "role":user.role,
                 "total_salary": round(total_salary, 2),
                 "currency":user.currency,
