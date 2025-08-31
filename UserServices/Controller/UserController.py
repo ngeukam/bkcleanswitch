@@ -190,6 +190,11 @@ class UpdateUserAPIView(APIView):
                     user.phone = data['phone']
                 if 'department' in data:
                     user.department = data['department']
+                if 'currency' in data:
+                    user.currency = data['currency']
+                if 'payrules' in data:
+                    payRate = data['payrules']['payRate']
+                    payType = data['payrules']['payType']
                 
                 # Handle is_active field
                 if 'is_active' in data:
@@ -210,6 +215,8 @@ class UpdateUserAPIView(APIView):
                     user.properties_assigned.set(properties)
                 
                 user.save()
+                
+                PayRule.objects.filter(user_id = user.id).update(payType = payType, payRate = payRate)
                 
                 return Response({
                     'message': 'User updated successfully',
@@ -287,7 +294,6 @@ class RetrieveDestroyUserAPIView(RetrieveDestroyAPIView):
                 raise PermissionDenied("You don't have permission to delete this user")
 
         return user
-
     def perform_destroy(self, instance):
         # Add any pre-delete logic here if needed
         instance.delete()
@@ -453,8 +459,9 @@ class GenerateScheduleAPIView(APIView):
         weeks = int(request.data.get('weeks', 1))
         working_days = request.data.get('working_days', [])
         daily_hours = float(request.data.get('daily_hours', 8))
-        staff_per_day = int(request.data.get('staff_per_day', 2))
-        start_date_str = request.data.get('start_date')
+        staff_per_day = int(request.data.get('staff_per_day', 1))
+        start_date_str = request.data.get('start_date')  # Content date and time
+        working_hour_ranges = request.data.get('working_hour_ranges', [])
         
         # Validate input
         if not staff_usernames or not working_days:
@@ -467,13 +474,24 @@ class GenerateScheduleAPIView(APIView):
             # Parse start date
             start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date() if start_date_str else datetime.now().date()
             
-            staff_members = User.objects.filter(username__in=staff_usernames)
+            # If no working hour ranges provided, create one based on daily_hours
+            if not working_hour_ranges:
+                working_hour_ranges = [["08:00", f"{int(8 + daily_hours):02d}:00"]]
+            
+            staff_members = list(User.objects.filter(username__in=staff_usernames))
             
             if len(staff_members) != len(staff_usernames):
                 missing = set(staff_usernames) - set(u.username for u in staff_members)
                 return Response(
                     {"error": f"Staff not found: {', '.join(missing)}"},
                     status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Verify staff_per_day doesn't exceed available time ranges
+            if staff_per_day > len(working_hour_ranges):
+                return Response(
+                    {"error": f"Cannot assign {staff_per_day} staff per day with only {len(working_hour_ranges)} time ranges available"},
+                    status=status.HTTP_400_BAD_REQUEST
                 )
 
             # Calculate total slots and verify perfect balance is possible
@@ -488,6 +506,7 @@ class GenerateScheduleAPIView(APIView):
                         "suggestion": {
                             "adjust_weeks": f"Try generating {weeks + 1} weeks for better balance",
                             "adjust_staff": f"Try with {len(staff_members) + 1} staff members",
+                            "adjust_staff_per_day": f"Try with {staff_per_day + 1} staff per day",
                             "required_slots_per_staff": total_slots / len(staff_members)
                         }
                     },
@@ -506,53 +525,91 @@ class GenerateScheduleAPIView(APIView):
                 "Friday": 4, "Saturday": 5, "Sunday": 6
             }
             
-            slots_per_staff = total_slots // len(staff_members)
             staff_assignments = {staff.username: 0 for staff in staff_members}
             schedule_data = []
             
-            # Create a list of staff to assign, repeating each according to their slots
-            staff_rotation = []
-            for staff in staff_members:
-                staff_rotation.extend([staff] * slots_per_staff)
-            
-            # Shuffle to randomize the order
-            import random
-            random.shuffle(staff_rotation)
-            
-            assignment_index = 0
-            
+            # Create a list of all days with their time ranges
+            all_days = []
             for week in range(weeks):
                 for day in working_days:
                     date = self._calculate_date(start_date, week, day, days_map)
+                    all_days.append({
+                        "date": date,
+                        "day": day,
+                        "week": week + 1,
+                        "time_ranges": working_hour_ranges.copy()
+                    })
+            
+            # Assign staff to each day's time ranges
+            import random
+            for day_info in all_days:
+                # Mélanger le staff pour CHAQUE jour pour plus de random
+                daily_staff_list = staff_members.copy()
+                random.shuffle(daily_staff_list)
+                
+                # Trier par nombre d'assignments pour mieux équilibrer
+                daily_staff_list.sort(key=lambda s: staff_assignments[s.username])
+                
+                # For each day, assign different staff to different time ranges
+                day_staff = []
+                
+                # Try to assign unique staff for each time range
+                for i in range(staff_per_day):
+                    # Trouver le staff disponible qui n'est pas déjà assigné à ce jour
+                    available_staff = [s for s in daily_staff_list if s not in day_staff]
                     
-                    # Get staff for this day
-                    day_staff = []
-                    for _ in range(staff_per_day):
-                        if assignment_index >= len(staff_rotation):
-                            # This shouldn't happen if math is correct
-                            raise ValueError("Assignment index out of range - balance calculation error")
-                        
-                        staff = staff_rotation[assignment_index]
-                        day_staff.append(staff)
-                        assignment_index += 1
+                    if not available_staff:
+                        # Si tout le staff est déjà assigné à ce jour, prendre celui avec le moins d'assignments
+                        available_staff = daily_staff_list
                     
-                    for staff in day_staff:
-                        # Save to database
-                        schedule = StaffSchedule.objects.create(
-                            staff=staff,
-                            day=day,
-                            hours=daily_hours,
-                            week_number=week+1,
-                            date=date,
-                            added_by_user_id = user
-                        )
-                        schedule_data.append(schedule)
-                        staff_assignments[staff.username] += 1
+                    # Prendre le staff avec le moins d'assignments
+                    available_staff.sort(key=lambda s: staff_assignments[s.username])
+                    staff = available_staff[0]
+                    day_staff.append(staff)
+                    
+                    # Get the time range for this slot
+                    time_range_index = i % len(working_hour_ranges)
+                    time_range = working_hour_ranges[time_range_index]
+                    
+                    # Calculate hours from time range
+                    start_time = datetime.strptime(time_range[0], "%H:%M")
+                    end_time = datetime.strptime(time_range[1], "%H:%M")
+                    hours = (end_time - start_time).seconds / 3600
+                    
+                    # Save to database
+                    schedule = StaffSchedule.objects.create(
+                        staff=staff,
+                        day=day_info["day"],
+                        hours=hours,
+                        week_number=day_info["week"],
+                        date=day_info["date"],
+                        start_time=time_range[0],
+                        end_time=time_range[1],
+                        added_by_user_id=user
+                    )
+                    schedule_data.append(schedule)
+                    staff_assignments[staff.username] += 1
+            
             # Verify final distribution
             final_distribution = {
-                username: staff_assignments[username] * daily_hours
+                username: {
+                    "total_assignments": staff_assignments[username],
+                    "total_hours": staff_assignments[username] * daily_hours
+                }
                 for username in staff_assignments.keys()
             }
+            
+            # Calculate distribution by time range
+            range_distribution = {}
+            for time_range in working_hour_ranges:
+                range_key = f"{time_range[0]}-{time_range[1]}"
+                range_distribution[range_key] = {
+                    staff.username: 0 for staff in staff_members
+                }
+            
+            for schedule in schedule_data:
+                range_key = f"{schedule.start_time}-{schedule.end_time}"
+                range_distribution[range_key][schedule.staff.username] += 1
             
             serializer = StaffScheduleSerializer(schedule_data, many=True)
             
@@ -560,25 +617,227 @@ class GenerateScheduleAPIView(APIView):
                 "message": "Perfectly balanced schedule generated",
                 "start_date": start_date_str,
                 "weeks": weeks,
+                "time_ranges": working_hour_ranges,
                 "total_assignments": len(schedule_data),
                 "hours_distribution": final_distribution,
+                "range_distribution": range_distribution,
                 "schedule": serializer.data
             }, status=status.HTTP_201_CREATED)
             
         except Exception as e:
+            import traceback
             traceback.print_exc()
             return Response(
                 {"error": str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
-    def _calculate_date(self, start_date, week, day_name, days_map):
-        """Calculate actual date based on start date, week offset, and day name"""
+    def _calculate_date(self, start_date, week, day, days_map):
+        # Calculate the specific date for a given week and day
+        from datetime import timedelta
+        
+        # Find the first occurrence of the requested day after start_date
         start_weekday = start_date.weekday()
-        target_weekday = days_map[day_name]
-        days_to_add = (target_weekday - start_weekday) % 7 + week * 7
-        return start_date + timedelta(days=days_to_add)
+        target_weekday = days_map[day]
+        
+        days_diff = (target_weekday - start_weekday) % 7
+        first_occurrence = start_date + timedelta(days=days_diff)
+        
+        # Add weeks
+        return first_occurrence + timedelta(weeks=week)
+
+class PreviewScheduleAPIView(APIView):
+    permission_classes = [IsAuthenticated, IsAdminOrManager]
     
+    def post(self, request):
+        # Get input data
+        staff_usernames = request.data.get('staff_usernames', [])
+        weeks = int(request.data.get('weeks', 1))
+        working_days = request.data.get('working_days', [])
+        daily_hours = float(request.data.get('daily_hours', 8))
+        staff_per_day = int(request.data.get('staff_per_day', 1))
+        start_date_str = request.data.get('start_date')
+        working_hour_ranges = request.data.get('working_hour_ranges', [])
+        
+        # Validate input
+        if not staff_usernames or not working_days:
+            return Response(
+                {"error": "Staff usernames and working days are required"},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+
+        try:
+            # Parse start date
+            start_date = datetime.strptime(start_date_str, '%Y-%m-%d').date() if start_date_str else datetime.now().date()
+            
+            # If no working hour ranges provided, create one based on daily_hours
+            if not working_hour_ranges:
+                working_hour_ranges = [["08:00", f"{int(8 + daily_hours):02d}:00"]]
+            
+            staff_members = list(User.objects.filter(username__in=staff_usernames))
+            
+            if len(staff_members) != len(staff_usernames):
+                missing = set(staff_usernames) - set(u.username for u in staff_members)
+                return Response(
+                    {"error": f"Staff not found: {', '.join(missing)}"},
+                    status=status.HTTP_404_NOT_FOUND
+                )
+
+            # Verify staff_per_day doesn't exceed available time ranges
+            if staff_per_day > len(working_hour_ranges):
+                return Response(
+                    {"error": f"Cannot assign {staff_per_day} staff per day with only {len(working_hour_ranges)} time ranges available"},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+
+            # Calculate total slots and verify perfect balance is possible
+            total_days = len(working_days) * weeks
+            total_slots = total_days * staff_per_day
+            
+            if total_slots % len(staff_members) != 0:
+                return Response(
+                    {
+                        "error": "Cannot create perfectly balanced schedule with current parameters",
+                        "message": f"Total available slots ({total_slots}) cannot be evenly divided among {len(staff_members)} staff members",
+                        "suggestion": {
+                            "adjust_weeks": f"Try generating {weeks + 1} weeks for better balance",
+                            "adjust_staff": f"Try with {len(staff_members) + 1} staff members",
+                            "adjust_staff_per_day": f"Try with {staff_per_day + 1} staff per day",
+                            "required_slots_per_staff": total_slots / len(staff_members)
+                        }
+                    },
+                    status=status.HTTP_200_OK
+                )
+
+            # Generate perfectly balanced schedule (preview only - no database save)
+            days_map = {
+                "Monday": 0, "Tuesday": 1, "Wednesday": 2, "Thursday": 3,
+                "Friday": 4, "Saturday": 5, "Sunday": 6
+            }
+            
+            staff_assignments = {staff.username: 0 for staff in staff_members}
+            preview_data = []
+            
+            # Create a list of all days with their time ranges
+            all_days = []
+            for week in range(weeks):
+                for day in working_days:
+                    date = self._calculate_date(start_date, week, day, days_map)
+                    all_days.append({
+                        "date": date,
+                        "day": day,
+                        "week": week + 1,
+                        "time_ranges": working_hour_ranges.copy()
+                    })
+            
+            # Create staff rotation list
+            staff_list = staff_members.copy()
+            import random
+            random.shuffle(staff_list)
+            
+            # Assign staff to each day's time ranges (preview only)
+            for day_info in all_days:
+                # Shuffle staff for each day for better randomness
+                daily_staff_list = staff_members.copy()
+                random.shuffle(daily_staff_list)
+                
+                # Sort by assignment count for better balance
+                daily_staff_list.sort(key=lambda s: staff_assignments[s.username])
+                
+                # For each day, assign different staff to different time ranges
+                day_staff = []
+                
+                for i in range(staff_per_day):
+                    # Find available staff not already assigned to this day
+                    available_staff = [s for s in daily_staff_list if s not in day_staff]
+                    
+                    if not available_staff:
+                        # If all staff are already assigned to this day, reuse someone
+                        available_staff = daily_staff_list
+                    
+                    # Choose staff with least assignments first
+                    available_staff.sort(key=lambda s: staff_assignments[s.username])
+                    staff = available_staff[0]
+                    day_staff.append(staff)
+                    
+                    # Get the time range for this slot
+                    time_range_index = i % len(working_hour_ranges)
+                    time_range = working_hour_ranges[time_range_index]
+                    
+                    # Calculate hours from time range
+                    start_time = datetime.strptime(time_range[0], "%H:%M")
+                    end_time = datetime.strptime(time_range[1], "%H:%M")
+                    hours = (end_time - start_time).seconds / 3600
+                    
+                    # Create preview data (no database save)
+                    preview_data.append({
+                        "staff": {
+                            "id": staff.id,
+                            "username": staff.username,
+                            "fullName": f"{staff.first_name} {staff.last_name}",
+                            "department": getattr(staff, 'department', 'N/A')
+                        },
+                        "day": day_info["day"],
+                        "hours": hours,
+                        "week_number": day_info["week"],
+                        "date": day_info["date"].isoformat(),
+                        "start_time": time_range[0],
+                        "end_time": time_range[1],
+                    })
+                    
+                    staff_assignments[staff.username] += 1
+            
+            # Calculate final distribution for preview
+            final_distribution = {
+                username: {
+                    "total_assignments": count,
+                    "total_hours": count * daily_hours
+                }
+                for username, count in staff_assignments.items()
+            }
+            
+            # Calculate distribution by time range
+            range_distribution = {}
+            for time_range in working_hour_ranges:
+                range_key = f"{time_range[0]}-{time_range[1]}"
+                range_distribution[range_key] = {
+                    staff.username: 0 for staff in staff_members
+                }
+            
+            for item in preview_data:
+                range_key = f"{item['start_time']}-{item['end_time']}"
+                range_distribution[range_key][item['staff']['username']] += 1
+            
+            return Response({
+                "preview": preview_data,
+                "total_assignments": len(preview_data),
+                "hours_distribution": final_distribution,
+                "range_distribution": range_distribution,
+                "message": "Schedule preview generated successfully"
+            }, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            return Response(
+                {"error": str(e)},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
+    def _calculate_date(self, start_date, week, day, days_map):
+        # Calculate the specific date for a given week and day
+        from datetime import timedelta
+        
+        # Find the first occurrence of the requested day after start_date
+        start_weekday = start_date.weekday()
+        target_weekday = days_map[day]
+        
+        days_diff = (target_weekday - start_weekday) % 7
+        first_occurrence = start_date + timedelta(days=days_diff)
+        
+        # Add weeks
+        return first_occurrence + timedelta(weeks=week)
+            
 class StaffScheduleAPIView(APIView):
     permission_classes = [IsAuthenticated]
     pagination_class = None
@@ -663,6 +922,8 @@ class StaffScheduleAPIView(APIView):
             day = data.get("day")
             hours = data.get("hours")
             week_number = data.get("week_number")
+            start_time = data.get("start_time")
+            end_time = data.get("end_time")
 
             if not all([staff_id, day, hours, week_number, date_str]):
                 return Response(
@@ -692,6 +953,8 @@ class StaffScheduleAPIView(APIView):
                 hours=hours,
                 week_number=week_number,
                 date=parsed_date,
+                start_time=start_time,
+                end_time=end_time,
                 added_by_user_id=request.user
             )
 
@@ -720,11 +983,11 @@ class StaffUsersAPIView(APIView):
             
             # Filter by staff roles (excluding 'guest')
             user = request.user
-            staff_roles = ['receptionist', 'cleaning', 'technical']
-            if(user.role == 'manager'):
-                staff_users = User.objects.filter(role__in=staff_roles, department=user.department)
-            else:
+            staff_roles = ['cleaning', 'technical']
+            if(user.role == 'admin'):
                 staff_users = User.objects.filter(role__in=staff_roles)
+            else: 
+                staff_users = User.objects.filter(role__in=staff_roles, department=user.department)
             # Order by creation date (newest first)
             staff_users = staff_users.order_by('-created_at')
             

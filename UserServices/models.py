@@ -61,6 +61,8 @@ class StaffSchedule(models.Model):
     hours = models.DecimalField(max_digits=4, decimal_places=1)
     week_number = models.PositiveIntegerField()
     date = models.DateField(null=True, blank=True)
+    start_time = models.CharField(null=True, blank=True)
+    end_time = models.CharField(null=True, blank=True)
     added_by_user_id=models.ForeignKey(User, on_delete=models.SET_NULL,blank=True,null=True,related_name='added_by_user_id_schedule')
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -75,7 +77,7 @@ class PayRule(models.Model):
         ('hourly','Hourly'),
         ('salaried', 'Salaried'),
     )
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='user_payRule')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='payrules')
     payType = models.CharField(max_length=20, choices=PAY_TYPES)
     payRate = models.FloatField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now=True)

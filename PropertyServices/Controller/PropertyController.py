@@ -3,10 +3,11 @@ from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIView, ListAPIView
 from rest_framework.response import Response
+from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
 from PropertyServices.Serializers import PropertySerializer
-from ApartmentServices.Serializers import ApartmentSerializer, BookingListSerializer
-from ApartmentServices.models import Apartment, Booking
+from ApartmentServices.Serializers import ApartmentSerializer, BookingListSerializer, RefundSerializer
+from ApartmentServices.models import Apartment, Booking, Refund
 from cleanswitch.Helpers import CustomPageNumberPagination, CommonListAPIMixin
 from PropertyServices.models import Property
 from UserServices.models import Guest
@@ -94,7 +95,7 @@ class TaskListByPropertyAPIView(ListAPIView):
 class UserListByPropertyAPIView(ListAPIView):
     serializer_class = UserSerializerWithFilters
     permission_classes = [IsAuthenticated]
-    
+    pagination_class = CustomPageNumberPagination
     def get_queryset(self):
         user = self.request.user
         property_id = self.kwargs.get('property_id')
@@ -112,14 +113,43 @@ class UserListByPropertyAPIView(ListAPIView):
         else:
             # Filter for specific roles for non-admin users
             users = users.filter(
-                role__in=["cleaning", "technical", "receptionist", "manager"],
-                # department =user.department
+                role__in=["cleaning", "technical"],
+                department =user.department
             )
         
         return users
     @CommonListAPIMixin.common_list_decorator(UserSerializerWithFilters)
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
+
+class StaffListByPropertyAPIView(ListAPIView):
+    serializer_class = UserSerializerWithFilters
+    permission_classes = [IsAuthenticated]
+    pagination_class = None
+    def get_queryset(self):
+        user = self.request.user
+        property_id = self.kwargs.get('property_id')
+        property_obj = get_object_or_404(Property, id=property_id)
+        if user.role != 'admin' and not user.is_superuser:
+            if not user.properties_assigned.filter(id=property_id).exists():
+                raise PermissionDenied("You don't have access to this property")
+        # Get all users assigned to this property
+        users = property_obj.assigned_users.all()
+        
+        # Apply filters based on user role
+        if user.role == 'admin' or user.is_superuser:
+            # Exclude guests for admin users
+            users = users.filter(
+                role__in=["cleaning", "technical"],
+            )
+        else:
+            # Filter for specific roles for non-admin users
+            users = users.filter(
+                role__in=["cleaning", "technical"],
+                department =user.department
+            )
+        
+        return users
 
 class BookingListByPropertyAPIView(ListAPIView):
     serializer_class = BookingListSerializer
@@ -195,7 +225,7 @@ class AvailableApartmentListByPropertyAPIView(ListAPIView):
         property_id = self.kwargs.get('property_id')
         property_obj = get_object_or_404(Property, id=property_id)
         if user.role != 'admin' and not user.is_superuser:
-            if not user.properties_assigned.filter(id=property_id).exists():
+            if not user.properties_assigned.filter(id=property_obj.id).exists():
                 raise PermissionDenied("You don't have access to this property")
             
         if user.role == "admin" or user.is_superuser:
@@ -208,12 +238,53 @@ class AvailableApartmentListByPropertyAPIView(ListAPIView):
             ).order_by('-created_at')
         
         return queryset
+
+class RefundListByPropertyAPIView(ListAPIView):
+    serializer_class = RefundSerializer
+    permission_classes = [IsAuthenticated]
+    pagination_class = CustomPageNumberPagination
+    
+    def get_queryset(self):
+        user = self.request.user
+        property_id = self.kwargs.get('property_id')
+        property_obj = get_object_or_404(Property, id=property_id)
+        if user.role != 'admin' and not user.is_superuser:
+            if not user.properties_assigned.filter(id=property_obj.id).exists():
+                raise PermissionDenied("You don't have access to this property")
+        guests = Guest.objects.filter(user__in = property_obj.assigned_users.all())
+        queryset = Refund.objects.filter(guest__in = guests).select_related(
+            'guest', 'reservation', 'processed_by'
+        ).order_by('-created_at')
+        return queryset
+            
+    @CommonListAPIMixin.common_list_decorator(RefundSerializer)
+    def list(self, request, *args, **kwargs):
+        return super().list(request, *args, **kwargs)
         
 class RetrieveUpdateDeletePropertyAPIView(RetrieveUpdateDestroyAPIView):
     queryset = Property.objects.all()
     serializer_class = PropertySerializer
-    permission_classes = [IsAuthenticated, IsReceptionist]
     pagination_class = None
+    
+    def get_permissions(self):
+            """
+            Override to use different permissions for destroy operation.
+            """
+            if self.request.method == 'DELETE':
+                # For DELETE, require or admin
+                return [IsAuthenticated(), IsAdmin()]
+            else:
+                # For GET, PUT, PATCH, use the default permissions
+                return [IsAuthenticated(), IsReceptionist()]
+                
+    def perform_update(self, serializer):
+        user = self.request.user
+        if user.role != 'admin':
+            return Response(
+                {"message": "Only admins can update property."},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        serializer.save()
 
 class PropertyStatsAPIView(APIView):
     """
@@ -317,6 +388,12 @@ class PropertyStatsAPIView(APIView):
             booking__apartment__property_assigned_id=property.id,
         ).distinct().count()
         
+        # 10. Total Booking Refund
+        total_pending_booking_refunds = Refund.objects.filter(
+            reservation__apartment__property_assigned_id=property.id,
+            status='pending'
+        ).count()
+        
         guests_registered_per_day = Guest.objects.filter(
             booking__apartment__property_assigned_id=property.id,
             user__date_joined__gte=start_of_week
@@ -349,6 +426,7 @@ class PropertyStatsAPIView(APIView):
             "total_pending_tasks":total_pending_tasks,
             "total_register_guests":total_register_guests,
             "total_reservations":total_reservations,
+            "total_pending_booking_refunds":total_pending_booking_refunds,
         }
         
         return Response(data)

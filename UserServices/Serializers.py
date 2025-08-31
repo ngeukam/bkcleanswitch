@@ -7,12 +7,23 @@ from PropertyServices.Serializers import PropertySimpleSerializer
 from .models import Guest, PayRule, Salary, StaffSchedule, User
 from django.utils import timezone
 
+class PayRuleSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = PayRule
+        fields = '__all__'
+        
+        
 class UserSerializer(serializers.ModelSerializer):
     properties_assigned = PropertySimpleSerializer(many=True, read_only=True)
     fullName = serializers.SerializerMethodField()
+    payrules = PayRuleSerializer(many=True, read_only=True)
     class Meta:
         model = User
-        fields = ['id', 'username', 'first_name', 'last_name', 'fullName', 'email', 'role', 'phone', 'properties_assigned', 'password', 'department', 'is_active', 'created_at']
+        fields = ['id', 'username', 'first_name', 'last_name', 
+                  'fullName', 'email', 'role', 'phone', 
+                  'properties_assigned', 'password', 'department', 
+                  'is_active', 'created_at', 'currency', 'payrules',
+                  ]
         read_only_fields = ['id', 'role']
     def get_fullName(self, obj):
         return obj.get_full_name()
@@ -49,12 +60,6 @@ class UserPlanningSerializer(serializers.ModelSerializer):
     
     def get_fullName(self, obj):
         return obj.get_full_name()
-
-class PayRuleSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = PayRule
-        fields = '__all__'
-        
 
 class SalarySerializer(serializers.ModelSerializer):
     user_role = serializers.SerializerMethodField()

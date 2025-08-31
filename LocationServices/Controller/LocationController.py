@@ -7,7 +7,6 @@ from django.db import transaction
 from LocationServices.Serializers import StaffLocationSerializer
 from LocationServices.models import StaffLocation
 from UserServices.models import User
-from PropertyServices.models import Property
 
 class StaffLocationListCreate(generics.ListCreateAPIView):
     serializer_class = StaffLocationSerializer
@@ -57,7 +56,7 @@ class ClockInOutAPIView(APIView):
                     message = 'Clocked in successfully'
                 
                 # Create new status record
-                new_record = StaffLocation.objects.create(
+                StaffLocation.objects.create(
                     staff=staff,
                     latitude=latitude,
                     longitude=longitude,

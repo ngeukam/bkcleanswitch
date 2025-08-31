@@ -221,7 +221,7 @@ class BookingListAPIView(ListAPIView):
         user = self.request.user
         if user.role == 'receptionist':
             queryset = Booking.objects.filter(apartment__property_assigned__in = user.properties_assigned.all()).order_by('-dateOfReservation')
-        elif user.role in ['admin', 'manager']:
+        elif user.role in ['admin', 'manager'] or user.is_superuser:
             queryset
         return queryset
     @CommonListAPIMixin.common_list_decorator(BookingListSerializer)
@@ -434,7 +434,7 @@ class BookingRefundAPIView(APIView):
         except (AttributeError, TypeError, ValueError):
             return Decimal('0')
 
-class RefundListUpdateAPIView(ListAPIView):
+class RefundListAPIView(ListAPIView):
     queryset = Refund.objects.all().select_related(
         'guest', 'reservation', 'processed_by'
     ).order_by('-created_at')
