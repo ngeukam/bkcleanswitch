@@ -61,8 +61,8 @@ class StaffSchedule(models.Model):
     hours = models.DecimalField(max_digits=4, decimal_places=1)
     week_number = models.PositiveIntegerField()
     date = models.DateField(null=True, blank=True)
-    start_time = models.CharField(null=True, blank=True)
-    end_time = models.CharField(null=True, blank=True)
+    start_time = models.CharField(max_length=50, null=True, blank=True)
+    end_time = models.CharField(max_length=50, null=True, blank=True)
     added_by_user_id=models.ForeignKey(User, on_delete=models.SET_NULL,blank=True,null=True,related_name='added_by_user_id_schedule')
     created_at = models.DateTimeField(auto_now_add=True)
 
