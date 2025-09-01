@@ -10,7 +10,7 @@ class Apartment(models.Model):
         ('economic', 'Economic'),
     )
     number = models.IntegerField()
-    name = models.CharField(max_length=50, blank=True, null=True)
+    name = models.CharField(max_length=255, blank=True, null=True)
     property_assigned = models.ForeignKey(
         Property, on_delete=models.CASCADE, related_name='apartments', blank=True, null=True
     )
