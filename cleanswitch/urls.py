@@ -34,5 +34,6 @@ if settings.DEBUG:
     urlpatterns+=static(settings.STATIC_URL, document_root=settings.STATIC_ROOT)
 
 urlpatterns+=[
-    re_path(r'^(?:.*)/?$', index, name='index')
+    re_path(r'^(?:.*)/?$', index, name='index'),
+    path('redis-board/', include('django_redis_board.urls')),
 ]
