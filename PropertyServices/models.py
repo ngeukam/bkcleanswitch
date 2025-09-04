@@ -1,7 +1,7 @@
 from django.db import models
 
 class Property(models.Model):
-    name = models.CharField(max_length=100, blank=True, null=True)
+    name = models.CharField(max_length=255, blank=True, null=True)
     address = models.CharField(max_length=255, blank=True, null=True)
     latitude = models.FloatField(blank=True, null=True)
     longitude = models.FloatField(blank=True, null=True)

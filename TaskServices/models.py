@@ -12,7 +12,7 @@ class TaskTemplate(models.Model):
         ('high', 'High'),
     )
     
-    title = models.CharField(max_length=50)
+    title = models.CharField(max_length=255)
     description = models.TextField()
     duration = models.DecimalField(
         max_digits=4,
@@ -38,7 +38,7 @@ class Task(models.Model):
         ('cancelled', 'Cancelled'),
     )
     
-    title = models.CharField(max_length=50)
+    title = models.CharField(max_length=255)
     description = models.TextField()
     notes = models.CharField(max_length=200, blank=True, null=True)
     due_date = models.DateTimeField(blank=True, null=True)

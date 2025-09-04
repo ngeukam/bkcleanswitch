@@ -57,7 +57,7 @@ class Guest(models.Model):
     
 class StaffSchedule(models.Model):
     staff = models.ForeignKey(User, on_delete=models.CASCADE, related_name='schedules')
-    day = models.CharField(max_length=10)
+    day = models.CharField(max_length=50)
     hours = models.DecimalField(max_digits=4, decimal_places=1)
     week_number = models.PositiveIntegerField()
     date = models.DateField(null=True, blank=True)
@@ -78,7 +78,7 @@ class PayRule(models.Model):
         ('salaried', 'Salaried'),
     )
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='payrules')
-    payType = models.CharField(max_length=20, choices=PAY_TYPES)
+    payType = models.CharField(max_length=50, choices=PAY_TYPES)
     payRate = models.FloatField(blank=True, null=True)
     created_at = models.DateTimeField(auto_now=True)
     updated_at=models.DateTimeField(auto_now=True)

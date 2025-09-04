@@ -211,7 +211,7 @@ class BookingRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
         return super().update(request, *args, **kwargs)
     
 class BookingListAPIView(ListAPIView):
-    queryset = Booking.objects.all()
+    queryset = Booking.objects.all().order_by('-dateOfReservation')
     serializer_class = BookingListSerializer
     permission_classes = [IsAuthenticated, IsReceptionist]
     pagination_class = CustomPageNumberPagination
