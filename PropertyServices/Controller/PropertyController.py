@@ -26,19 +26,10 @@ class CreateListPropertyAPIView(ListCreateAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        base_queryset = Property.objects.select_related(
-            'added_by_user'
-        ).prefetch_related(
-            'properties_assigned'
-        )
-        
-        if user.role == 'admin' or user.is_superuser:
-            return base_queryset
-        else:
-            return base_queryset.filter(
-                properties_assigned=user,
-                is_active=True
-            )
+        if user.role == 'admin' or user.is_superuser == True:
+            return Property.objects.all()
+        else :
+            return user.properties_assigned.filter(is_active=True)
 
     def perform_create(self, serializer):
         if self.request.user.role != 'admin':
