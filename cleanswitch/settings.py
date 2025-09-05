@@ -78,6 +78,22 @@ MIDDLEWARE = [
     "django.middleware.cache.FetchFromCacheMiddleware",
 ]
 
+# Cache settings
+CACHE_MIDDLEWARE_ALIAS = 'default'
+CACHE_MIDDLEWARE_SECONDS = 60 * 15  # 15 minutes
+CACHE_MIDDLEWARE_KEY_PREFIX = 'cleanswitch'
+
+# Security settings pour production
+SECURE_BROWSER_XSS_FILTER = True
+SECURE_CONTENT_TYPE_NOSNIFF = True
+X_FRAME_OPTIONS = 'DENY'
+# SECURE_SSL_REDIRECT = True
+SESSION_COOKIE_SECURE = True
+CSRF_COOKIE_SECURE = True
+
+# Database cache (pour les requêtes fréquentes)
+DATABASE_CACHE_TIMEOUT = 60 * 5  # 5 minutes
+
 ROOT_URLCONF = "cleanswitch.urls"
 
 REST_FRAMEWORK = {
