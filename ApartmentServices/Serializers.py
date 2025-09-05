@@ -124,10 +124,10 @@ class BookingUpdateSerializer(serializers.ModelSerializer):
         start_date = attrs.get("startDate")
         end_date = attrs.get("endDate")
         apartment = attrs.get("apartment")
-        status = attrs.get("status")
+        # status = attrs.get("status")
         
-        if status == "checked_in" and start_date > timezone.now():
-            raise serializers.ValidationError("You cannont Check In when start date is in the future.")
+        # if status == "checked_in" and start_date > timezone.now():
+        #     raise serializers.ValidationError("You cannont Check In when start date is in the future.")
         # Validate dates
         if start_date and end_date:
             if start_date >= end_date:
@@ -286,8 +286,8 @@ class BookingCreateSerializer(serializers.ModelSerializer):
         apartment = attrs.get("apartment")
         status = attrs.get("status")
         # Validate dates
-        if status == "checked_in" and start_date > timezone.now():
-            raise serializers.ValidationError("You cannont Check In when start date is in the future.")
+        # if status == "checked_in" and start_date > timezone.now():
+        #     raise serializers.ValidationError("You cannont Check In when start date is in the future.")
         
         if status == "upcoming" and start_date < timezone.now():
             raise serializers.ValidationError("You cannont Upcoming when start date is in the past.")

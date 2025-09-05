@@ -59,9 +59,9 @@ class Booking(models.Model):
     
     def save(self, *args, **kwargs):
         # Update status based on dates
-        now = timezone.now()
-        if self.startDate and self.startDate > now:
-            self.status = 'upcoming'
+        # now = timezone.now()
+        # if self.startDate and self.startDate > now:
+        #     self.status = 'upcoming'
         
         super().save(*args, **kwargs)
         

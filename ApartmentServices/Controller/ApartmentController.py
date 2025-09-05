@@ -141,7 +141,8 @@ class BookingRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
     def get_serializer_class(self):
         if self.request.method in ['PUT', 'PATCH']:
             return BookingUpdateSerializer
-        return BookingListSerializer
+        else:
+            return BookingListSerializer
 
     def validate_status_transition(self, current_status, new_status):
         """Validate allowed status transitions"""
@@ -170,6 +171,8 @@ class BookingRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
         new_apartment_id = request.data.get('apartment')
         current_status = instance.status
         new_status = request.data.get('status')
+        print('new_status', new_status)
+
         # Validate status transition
         if new_status and not self.validate_status_transition(current_status, new_status):
             error_messages = {
