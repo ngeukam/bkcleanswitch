@@ -1,0 +1,6 @@
+/env
+.env
+redis.conf
+entrypoint.sh
+requirements.txt
+/cleanswitch/settings.py
