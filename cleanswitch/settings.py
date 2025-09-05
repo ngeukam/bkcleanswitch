@@ -67,7 +67,7 @@ INSTALLED_APPS = [
     
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
-    # "django.middleware.cache.UpdateCacheMiddleware", 
+    "django.middleware.cache.UpdateCacheMiddleware", 
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -75,12 +75,12 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    # "django.middleware.cache.FetchFromCacheMiddleware",
+    "django.middleware.cache.FetchFromCacheMiddleware",
 ]
 
 # Cache settings
 CACHE_MIDDLEWARE_ALIAS = 'default'
-CACHE_MIDDLEWARE_SECONDS = 60 * 15  # 15 minutes
+CACHE_MIDDLEWARE_SECONDS = 60 * 5  # 5 minutes
 CACHE_MIDDLEWARE_KEY_PREFIX = 'cleanswitch'
 
 # Security settings pour production
@@ -119,7 +119,7 @@ CACHES = {
             'COMPRESS_MIN_LENGTH': 5000,  # Compresser les données > 5KB
         },
         'KEY_PREFIX': 'cleanswitch',
-        'TIMEOUT': 60 * 15,  # 15 minutes par défaut
+        'TIMEOUT': 60 * 5,  # 5 minutes par défaut
         'VERSION': 1,
     }
 }
