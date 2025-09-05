@@ -67,7 +67,6 @@ INSTALLED_APPS = [
     
 MIDDLEWARE = [
     "corsheaders.middleware.CorsMiddleware",
-    "django.middleware.cache.UpdateCacheMiddleware", 
     "django.middleware.security.SecurityMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
@@ -75,13 +74,8 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
-    "django.middleware.cache.FetchFromCacheMiddleware",
 ]
 
-# Cache settings
-CACHE_MIDDLEWARE_ALIAS = 'default'
-CACHE_MIDDLEWARE_SECONDS = 60 * 5  # 5 minutes
-CACHE_MIDDLEWARE_KEY_PREFIX = 'cleanswitch'
 
 # Security settings pour production
 SECURE_BROWSER_XSS_FILTER = True
@@ -108,23 +102,20 @@ CACHES = {
         'LOCATION': os.environ.get('REDIS_URL', 'redis://localhost:6379/0'),
         'OPTIONS': {
             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-            'IGNORE_EXCEPTIONS': True,
-            'SOCKET_CONNECT_TIMEOUT': 5,  # seconds
-            'SOCKET_TIMEOUT': 5,  # seconds
+            'SOCKET_CONNECT_TIMEOUT': 5,
+            'SOCKET_TIMEOUT': 5,
             'CONNECTION_POOL_KWARGS': {
                 'max_connections': 100,
                 'retry_on_timeout': True
             },
-            'COMPRESSOR': 'django_redis.compressors.zlib.ZlibCompressor',
-            'COMPRESS_MIN_LENGTH': 5000,  # Compresser les données > 5KB
         },
         'KEY_PREFIX': 'cleanswitch',
-        'TIMEOUT': 60 * 5,  # 5 minutes par défaut
+        'TIMEOUT': 60 * 60 * 24,  # ↑↑↑ 24 HEURES pour le cache manuel
         'VERSION': 1,
     }
 }
 
-# Cache des sessions avec timeout plus court
+# Cache des sessions - TIMEOUT DIFFÉRENT!
 SESSION_CACHE_ALIAS = 'default'
 SESSION_COOKIE_AGE = 60 * 60 * 24 * 7  # 1 semaine
 SESSION_ENGINE = 'django.contrib.sessions.backends.cache'
