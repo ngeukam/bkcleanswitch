@@ -47,7 +47,6 @@ AUTH_USER_MODEL = 'UserServices.User'
 # Application definition
 
 INSTALLED_APPS = [
-    # "django.contrib.gis", #You'll need PostGIS for production. if you face issues oof GDAL do sudo apt-get install gdal-bin libgdal-dev python3-gdal
     "django.contrib.admin",
     "django.contrib.auth",
     "django.contrib.contenttypes",
