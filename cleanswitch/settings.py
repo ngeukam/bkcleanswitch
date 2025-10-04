@@ -30,7 +30,7 @@ SECRET_KEY = os.getenv('DJANGO_SECRET_KEY')
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = os.getenv('DJANGO_DEBUG')
 
-ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS", "127.0.0.1,localhost").split(",")
+ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS").split(",")
 
 # ALLOWED_HOSTS = ['*']
 
@@ -100,24 +100,24 @@ REST_FRAMEWORK = {
     ),
 }
 
-# CACHES = {
-#     'default': {
-#         'BACKEND': 'django_redis.cache.RedisCache',
-#         'LOCATION': os.environ.get('REDIS_URL', 'redis://localhost:6379/0'),
-#         'OPTIONS': {
-#             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-#             'SOCKET_CONNECT_TIMEOUT': 5,
-#             'SOCKET_TIMEOUT': 5,
-#             'CONNECTION_POOL_KWARGS': {
-#                 'max_connections': 100,
-#                 'retry_on_timeout': True
-#             },
-#         },
-#         'KEY_PREFIX': 'cleanswitch',
-#         'TIMEOUT': 60 * 60 * 24,  # ↑↑↑ 24 HEURES pour le cache manuel
-#         'VERSION': 1,
-#     }
-# }
+CACHES = {
+    'default': {
+        'BACKEND': 'django_redis.cache.RedisCache',
+        'LOCATION': os.environ.get('REDIS_URL', 'redis://localhost:6379/0'),
+        'OPTIONS': {
+            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+            'SOCKET_CONNECT_TIMEOUT': 5,
+            'SOCKET_TIMEOUT': 5,
+            'CONNECTION_POOL_KWARGS': {
+                'max_connections': 100,
+                'retry_on_timeout': True
+            },
+        },
+        'KEY_PREFIX': 'cleanswitch',
+        'TIMEOUT': 60 * 60 * 24,  # ↑↑↑ 24 HEURES pour le cache manuel
+        'VERSION': 1,
+    }
+}
 
 # Cache des sessions - TIMEOUT DIFFÉRENT!
 SESSION_CACHE_ALIAS = 'default'

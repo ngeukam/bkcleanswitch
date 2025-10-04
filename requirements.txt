@@ -1,5 +1,4 @@
 mysqlclient==2.2.4
-psycopg2-binary==2.9.7
 django-redis==5.4.0
 gunicorn==21.2.0
 amqp==5.3.1
