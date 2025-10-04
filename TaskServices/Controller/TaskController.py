@@ -1,6 +1,6 @@
 # views.py
 from rest_framework import exceptions 
-from TaskServices.Serializers import TaskSerializer, TaskSerializerWithFilters, TaskTemplateSerializer
+from TaskServices.Serializers import TaskCalendarSerializer, TaskSerializer, TaskSerializerWithFilters, TaskTemplateSerializer
 from rest_framework import permissions
 from rest_framework.response import Response
 from TaskServices.models import Task, TaskGallerie, TaskTemplate
@@ -9,6 +9,7 @@ from rest_framework.views import APIView
 from ApartmentServices.models import Apartment
 from cleanswitch.Helpers import CommonListAPIMixinWithFilter, CustomPageNumberPagination
 from cleanswitch.permissions import IsAdminOrManager
+from django.db.models import Q
 
 class TaskListCreateAPIView(generics.ListCreateAPIView):
     queryset = Task.objects.all()
@@ -26,8 +27,17 @@ class TaskListCreateAPIView(generics.ListCreateAPIView):
         if template_id:
             queryset = queryset.filter(template_id=template_id)
         
+        # Filter by apartment if needed
+        apartment_id = self.request.query_params.get('apartment')
+        if apartment_id:
+            queryset = queryset.filter(apartments_assigned__id=apartment_id)  # Updated to ManyToMany
+        
         if assigned_to and user.role in ["technical", "cleaning"]:
-            queryset = queryset.filter(assigned_to__id=assigned_to, property_assigned__is_active=True, active=True)
+            queryset = queryset.filter(
+                assigned_to__id=assigned_to, 
+                property_assigned__is_active=True, 
+                active=True
+            )
         elif user.role == "manager":
             queryset = queryset.filter(property_assigned__is_active=True)
         elif user.role == "admin" or user.is_superuser == True:
@@ -41,7 +51,7 @@ class TaskListCreateAPIView(generics.ListCreateAPIView):
         else:
             queryset = queryset.none()
 
-        return queryset.order_by('-created_at')
+        return queryset.distinct().order_by('-created_at')  # Added distinct() for ManyToMany
 
     def perform_create(self, serializer):
         user = self.request.user
@@ -53,6 +63,9 @@ class TaskListCreateAPIView(generics.ListCreateAPIView):
         
         template_id = self.request.data.get('template_id')
         template = TaskTemplate.objects.filter(id=template_id).first() if template_id else None
+        
+        # Extract apartments_assigned before saving
+        apartment_ids = self.request.data.get('apartments_assigned', [])
         
         # Save the task first
         task = serializer.save(
@@ -68,9 +81,11 @@ class TaskListCreateAPIView(generics.ListCreateAPIView):
         if assigned_to_ids:
             task.assigned_to.set(assigned_to_ids)
         
-        apartmentId = self.request.data.get('apartment_assigned')
-        if(apartmentId):
-            Apartment.objects.filter(id=apartmentId).update(cleaned=False)
+        # Handle apartments_assigned ManyToMany relationship
+        if apartment_ids:
+            task.apartments_assigned.set(apartment_ids)
+            # Set cleaned=False for all assigned apartments
+            Apartment.objects.filter(id__in=apartment_ids).update(cleaned=False)
     
     @CommonListAPIMixinWithFilter.common_list_decorator(TaskSerializerWithFilters)
     def list(self, request, *args, **kwargs):
@@ -137,21 +152,22 @@ class TaskRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
                             status=status.HTTP_400_BAD_REQUEST)
 
         taskStatus = self.request.data.get('status')
-        apartmentId = self.request.data.get('apartment_assigned')
-        if(taskStatus == 'completed' and apartmentId):
-            Apartment.objects.filter(id=apartmentId).update(cleaned=True)
+        apartmentIds = self.request.data.get('apartments_assigned', [])  # Changed to handle array
+        
+        # Handle apartment cleaning status when task is completed
+        if taskStatus == 'completed' and apartmentIds:
+            # Update cleaning status for all assigned apartments
+            Apartment.objects.filter(id__in=apartmentIds).update(cleaned=True)
+        
         # Handle gallery images separately
         gallery_images = request.data.pop('gallery_images', None)
         
         # Perform the standard update first
-        
         response = super().partial_update(request, *args, **kwargs)
+        
         # If there are gallery images to process
         if gallery_images and response.status_code == status.HTTP_200_OK:
             try:
-                # Clear existing gallery images if needed
-                # task.gallery_task.all().delete()
-                
                 # Create new gallery images
                 for img_data in gallery_images:
                     TaskGallerie.objects.create(
@@ -171,7 +187,6 @@ class TaskRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
         
         return response
 
-            
     def perform_destroy(self, instance):
         # if instance.status == 'completed':
         #     raise exceptions.PermissionDenied("Completed tasks cannot be deleted.")
@@ -225,3 +240,44 @@ class TaskStatusUpdateAPIView(APIView):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+class CalendarTasksAPIView(APIView):
+    """
+    API endpoint to get tasks for calendar view
+    """
+    
+    def get(self, request):
+        try:
+            # Get date range from query parameters (optional)
+            start_date = request.GET.get('start')
+            end_date = request.GET.get('end')
+            
+            queryset = Task.objects.filter(active=True)
+            
+            # Filter by date range if provided
+            if start_date and end_date:
+                queryset = queryset.filter(
+                    Q(due_date__range=[start_date, end_date]) |
+                    Q(created_at__range=[start_date, end_date])
+                )
+            
+            # Apply user permissions
+            user = request.user
+            if user.role in ["technical", "cleaning"]:
+                queryset = queryset.filter(assigned_to=user)
+            elif user.role == "receptionist":
+                queryset = queryset.filter(
+                    property_assigned__in=user.properties_assigned.all()
+                )
+            elif user.role == "manager":
+                queryset = queryset.filter(property_assigned__is_active=True)
+            
+            serializer = TaskCalendarSerializer(queryset, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+

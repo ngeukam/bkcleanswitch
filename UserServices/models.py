@@ -52,9 +52,14 @@ class Guest(models.Model):
         return 0
 
     def current_apartment(self):
-        booking = Booking.objects.filter(guest=self, apartment__inService=True).first()
-        return f"{booking.apartment.number} - {booking.apartment.name} ({booking.apartment.property_assigned.name}-{booking.apartment.property_assigned.address})" if booking else None
-    
+        booking = Booking.objects.filter(guest=self, apartments__inService=True).order_by('-startDate').first()
+        if booking:
+            return [
+                f"{ap.number} - {ap.name} ({ap.property_assigned.name}-{ap.property_assigned.address})"
+                for ap in booking.apartments.filter(inService=True)
+            ]
+        return []
+
 class StaffSchedule(models.Model):
     staff = models.ForeignKey(User, on_delete=models.CASCADE, related_name='schedules')
     day = models.CharField(max_length=50)

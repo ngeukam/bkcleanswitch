@@ -90,6 +90,13 @@ class GuestSerializer(serializers.ModelSerializer):
         return obj.num_of_bookings()
 
 class BookingUpdateSerializer(serializers.ModelSerializer):
+    # Change from single apartment to multiple apartments
+    apartments = serializers.PrimaryKeyRelatedField(
+        many=True, 
+        queryset=Apartment.objects.all(), 
+        required=False
+    )
+    
     # Guest fields (make them optional for updates)
     first_name = serializers.CharField(write_only=True, required=False)
     last_name = serializers.CharField(write_only=True, required=False)
@@ -100,53 +107,46 @@ class BookingUpdateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Booking
         fields = [
-            "apartment", "startDate", "endDate", "status",
+            "apartments", "startDate", "endDate", "status",  # Changed apartment to apartments
             "first_name", "last_name", "phone", "email", "idCard"
         ]
     
     def validate_idCard(self, value):
-        if not value:  # Handle None or empty values
+        if not value:
             return None
-            
         if not isinstance(value, dict):
             raise serializers.ValidationError("idCard must be a JSON object.")
-            
         url = value.get("url")
         if not url:
             raise serializers.ValidationError("idCard must contain a 'url' key.")
-            
         if not url.startswith("https://") or "s3" not in url:
             raise serializers.ValidationError("Invalid S3 URL for idCard.")
-            
         return value
     
     def validate(self, attrs):
         start_date = attrs.get("startDate")
         end_date = attrs.get("endDate")
-        apartment = attrs.get("apartment")
-        # status = attrs.get("status")
+        apartments = attrs.get("apartments", [])
         
-        # if status == "checked_in" and start_date > timezone.now():
-        #     raise serializers.ValidationError("You cannont Check In when start date is in the future.")
         # Validate dates
         if start_date and end_date:
             if start_date >= end_date:
                 raise serializers.ValidationError("End date must be after start date.")
             
-            # Check for overlapping bookings
-            if apartment:
+            # Check for overlapping bookings for each apartment
+            for apartment in apartments:
                 overlapping_bookings = Booking.objects.filter(
-                    apartment=apartment,
+                    apartments=apartment,
                     startDate__lt=end_date,
                     endDate__gt=start_date
-                ).exclude(status__in = ['cancelled', 'active', 'checked_out'])  # Exclude cancelled bookings
+                ).exclude(status__in=['cancelled', 'checked_out'])
                 
-                if self.instance:  # For updates, exclude current booking
+                if self.instance:
                     overlapping_bookings = overlapping_bookings.exclude(pk=self.instance.pk)
                 
                 if overlapping_bookings.exists():
                     raise serializers.ValidationError(
-                        f"This apartment is already booked from {start_date} to {end_date}."
+                        f"Apartment #{apartment.number} is already booked from {start_date} to {end_date}."
                     )
 
         return attrs
@@ -159,24 +159,25 @@ class BookingUpdateSerializer(serializers.ModelSerializer):
             new_status = validated_data.get("status")
             current_status = instance.status
             
-            # If status is being changed to "checked_out", set the check_out user
             if new_status == "checked_out" and current_status != "checked_out":
                 validated_data["check_out_by_user_id"] = request.user
-            
-            # If status is being changed from "checked_out" to something else, clear the check_out user
             elif new_status != "checked_out" and current_status == "checked_out":
                 validated_data["check_out_by_user_id"] = None
         
+        # Handle apartments ManyToMany field
+        apartments = validated_data.pop('apartments', None)
+        
         # Update booking fields
-        instance.apartment = validated_data.get('apartment', instance.apartment)
         instance.startDate = validated_data.get('startDate', instance.startDate)
         instance.endDate = validated_data.get('endDate', instance.endDate)
         instance.status = validated_data.get('status', instance.status)
         instance.check_out_by_user_id = validated_data.get('check_out_by_user_id', instance.check_out_by_user_id)
-        if  instance.apartment:
-            result = Apartment.objects.get(id= instance.apartment.id)
-            instance.guest.user.properties_assigned.set([result.property_assigned])
-        # Handle guest data updates (only if provided)
+        
+        # Update apartments if provided
+        if apartments is not None:
+            instance.apartments.set(apartments)
+        
+        # Handle guest data updates
         guest_data_provided = any(key in validated_data for key in ['first_name', 'last_name', 'phone', 'email', 'idCard'])
         
         if guest_data_provided:
@@ -204,7 +205,7 @@ class BookingUpdateSerializer(serializers.ModelSerializer):
         return instance
 
 class BookingListSerializer(serializers.ModelSerializer):
-    apartment = ApartmentSerializer(read_only=True)
+    apartments = ApartmentSerializer(many=True, read_only=True)  # Changed to many=True
     guest = GuestSerializer(read_only=True)
     added_by_user = UserSerializer(source='added_by_user_id', read_only=True)
     duration = serializers.SerializerMethodField()
@@ -214,7 +215,7 @@ class BookingListSerializer(serializers.ModelSerializer):
         model = Booking
         fields = [
             'id',
-            'apartment',
+            'apartments',  # Changed from apartment to apartments
             'guest',
             'dateOfReservation',
             'startDate',
@@ -228,7 +229,6 @@ class BookingListSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_duration(self, obj):
-        """Calculate duration in days with safety checks"""
         try:
             total_hours = (obj.endDate - obj.startDate).total_seconds() / 3600
             duration_days = math.ceil(total_hours / 24)
@@ -237,19 +237,25 @@ class BookingListSerializer(serializers.ModelSerializer):
             return None
         
     def get_totalPrice(self, obj):
-        """Calculate total price with safety checks"""
         try:
-            if obj.apartment and obj.apartment.price:
-                # Calculate total hours and round up to full days
-                total_hours = (obj.endDate - obj.startDate).total_seconds() / 3600
-                duration_days = math.ceil(total_hours / 24)
-                total_price = duration_days * obj.apartment.price
-                return round(total_price, 2)
-            return None
+            # Calculate total price for all apartments
+            total_price = 0
+            for apartment in obj.apartments.all():
+                if apartment and apartment.price:
+                    total_hours = (obj.endDate - obj.startDate).total_seconds() / 3600
+                    duration_days = math.ceil(total_hours / 24)
+                    total_price += duration_days * apartment.price
+            return round(total_price, 2) if total_price > 0 else None
         except (AttributeError, TypeError):
             return None
 
 class BookingCreateSerializer(serializers.ModelSerializer):
+    # Change to ManyToMany field
+    apartments = serializers.PrimaryKeyRelatedField(
+        many=True, 
+        queryset=Apartment.objects.all()
+    )
+    
     # Guest fields
     first_name = serializers.CharField(write_only=True)
     last_name = serializers.CharField(write_only=True)
@@ -260,62 +266,56 @@ class BookingCreateSerializer(serializers.ModelSerializer):
     class Meta:
         model = Booking
         fields = [
-            "apartment", "startDate", "endDate", "dateOfReservation", "status", "added_by_user_id",
+            "apartments", "startDate", "endDate", "dateOfReservation", "status", "added_by_user_id",  # Changed apartment to apartments
             "first_name", "last_name", "phone", "email", "idCard"
         ]
     
     def validate_idCard(self, value):
-        if not value:  # Handle None or empty values
+        if not value:
             return None
-            
         if not isinstance(value, dict):
             raise serializers.ValidationError("idCard must be a JSON object.")
-            
         url = value.get("url")
         if not url:
             raise serializers.ValidationError("idCard must contain a 'url' key.")
-            
         if not url.startswith("https://") or "s3" not in url:
             raise serializers.ValidationError("Invalid S3 URL for idCard.")
-            
         return value
     
     def validate(self, attrs):
         start_date = attrs.get("startDate")
         end_date = attrs.get("endDate")
-        apartment = attrs.get("apartment")
+        apartments = attrs.get("apartments", [])
         status = attrs.get("status")
-        # Validate dates
-        # if status == "checked_in" and start_date > timezone.now():
-        #     raise serializers.ValidationError("You cannont Check In when start date is in the future.")
         
-        if status == "upcoming" and start_date < timezone.now():
-            raise serializers.ValidationError("You cannont Upcoming when start date is in the past.")
+        # if status == "upcoming" and start_date < timezone.now():
+        #     raise serializers.ValidationError("You cannot set Upcoming when start date is in the past.")
         
         if start_date and end_date:
             if start_date >= end_date:
                 raise serializers.ValidationError("End date must be after start date.")
             
-            # Check for overlapping bookings
-            if apartment:
+            # Check for overlapping bookings for each apartment
+            for apartment in apartments:
                 overlapping_bookings = Booking.objects.filter(
-                    apartment=apartment,
+                    apartments=apartment,
                     startDate__lt=end_date,
                     endDate__gt=start_date
-                ).exclude(status__in = ['cancelled', 'active', 'checked_out'])  # Exclude cancelled bookings
-                
-                if self.instance:  # For updates, exclude current booking
-                    overlapping_bookings = overlapping_bookings.exclude(pk=self.instance.pk)
+                ).exclude(status__in=['cancelled', 'checked_out'])
                 
                 if overlapping_bookings.exists():
                     raise serializers.ValidationError(
-                        f"This apartment is already booked from {start_date} to {end_date}."
+                        f"Apartment #{apartment.number} is already booked from {start_date} to {end_date}."
                     )
 
         return attrs
     
     def create(self, validated_data):
         request = self.context.get("request")
+        
+        # Extract apartments before creating booking
+        apartments = validated_data.pop('apartments')
+        
         if request and hasattr(request, "user"):
             validated_data["added_by_user_id"] = request.user
             if validated_data.get("status") == "checked_in":
@@ -327,26 +327,22 @@ class BookingCreateSerializer(serializers.ModelSerializer):
         first_name = validated_data.pop("first_name")
         last_name = validated_data.pop("last_name")
         phone = validated_data.pop("phone")
-        id_card = validated_data.pop("idCard", None)  # Made optional with default None
+        id_card = validated_data.pop("idCard", None)
         email = validated_data.pop("email")
-        apartment = validated_data.get("apartment")
 
-        # Generate username (handle potential duplicates)
+        # Generate username
         base_username = f"{first_name.lower()}{last_name.lower()}"
         
         try:
-            # If we get here, either:
-            # 1. User doesn't exist, or
-            # 2. Phone and email match an existing user
             user = User.objects.get(Q(phone=phone) | Q(email=email) | Q(username=base_username))
             guest = Guest.objects.get(user=user)
             
-            if id_card:  # Update ID card if provided
+            if id_card:
                 guest.idCard = id_card
                 guest.save()
 
         except User.DoesNotExist:
-            # Create new user logic
+            # Create new user and guest
             password = f"{first_name}{last_name}"
             user = User.objects.create(
                 username=base_username,
@@ -358,9 +354,12 @@ class BookingCreateSerializer(serializers.ModelSerializer):
                 is_active=True,
                 password=make_password(password),
             )
-            if apartment:
-                result = Apartment.objects.get(id=apartment.id)
-                user.properties_assigned.set([result.property_assigned])
+            
+            # Assign properties from apartments
+            property_ids = [apt.property_assigned.id for apt in apartments if apt.property_assigned]
+            if property_ids:
+                user.properties_assigned.set(property_ids)
+                
             guest = Guest.objects.create(user=user, idCard=id_card)
             
         # Create booking
@@ -368,6 +367,9 @@ class BookingCreateSerializer(serializers.ModelSerializer):
             guest=guest,
             **validated_data
         )
+        
+        # Set the ManyToMany relationship
+        booking.apartments.set(apartments)
 
         return booking
     
@@ -396,3 +398,51 @@ class RefundSerializer(serializers.ModelSerializer):
         if instance and instance.status not in ['pending']:
             raise serializers.ValidationError("Cannot edit a processed refund.")
         return data
+
+class BookingCalendarSerializer(serializers.ModelSerializer):
+    title = serializers.SerializerMethodField()
+    start = serializers.SerializerMethodField()
+    end = serializers.SerializerMethodField()
+    color = serializers.SerializerMethodField()
+    type = serializers.SerializerMethodField()
+    apartments_info = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Booking
+        fields = [
+            'id', 'title', 'start', 'end', 'color', 'type',
+            'status', 'apartments_info'
+        ]
+    
+    def get_title(self, obj):
+        apartments_count = obj.apartments.count()
+        apartment_info = f"{apartments_count} apartment{'s' if apartments_count != 1 else ''}"
+        return f"Booking: {obj.guest.user.first_name} {obj.guest.user.last_name} ({apartment_info})"
+    
+    def get_start(self, obj):
+        return obj.startDate.isoformat()
+    
+    def get_end(self, obj):
+        return obj.endDate.isoformat()
+    
+    def get_color(self, obj):
+        status_colors = {
+            'confirmed': '#2196f3',      # Blue
+            'checked_in': '#4caf50',     # Green
+            'checked_out': '#f44336',    # Red
+            'cancelled': '#9e9e9e',      # Grey
+            'upcoming': '#ff9800',       # Orange
+            'active': '#673ab7',         # Purple
+        }
+        return status_colors.get(obj.status, '#757575')
+    
+    def get_type(self, obj):
+        return 'booking'
+    
+    def get_apartments_info(self, obj):
+        return [{
+            'id': apt.id,
+            'number': apt.number,
+            'name': apt.name,
+            'property': apt.property_assigned.name if apt.property_assigned else None
+        } for apt in obj.apartments.all()]

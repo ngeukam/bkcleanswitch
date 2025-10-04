@@ -6,7 +6,7 @@ from rest_framework.generics import ListCreateAPIView, RetrieveUpdateDestroyAPIV
 from rest_framework.response import Response
 from rest_framework import status
 from rest_framework.permissions import IsAuthenticated
-from ApartmentServices.Serializers import ApartmentSerializer, BookingCreateSerializer, BookingListSerializer, BookingUpdateSerializer, RefundSerializer
+from ApartmentServices.Serializers import ApartmentSerializer, BookingCalendarSerializer, BookingCreateSerializer, BookingListSerializer, BookingUpdateSerializer, RefundSerializer
 from ApartmentServices.models import Apartment, Booking, Refund
 from cleanswitch.Helpers import CustomPageNumberPagination, CommonListAPIMixin
 from PropertyServices.models import Property
@@ -14,7 +14,7 @@ from UserServices.Serializers import UserSerializer
 from cleanswitch.permissions import IsAdmin, IsAdminOrManager, IsReceptionist
 from rest_framework.views import APIView
 from rest_framework.exceptions import PermissionDenied
-from django.db.models import Count, F, ExpressionWrapper, fields, Sum
+from django.db.models import Q, Sum
 
 class CreateListApartmentAPIView(ListCreateAPIView):
     serializer_class = ApartmentSerializer
@@ -122,21 +122,24 @@ class BookingRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
         queryset = super().get_queryset()
         user = self.request.user
         if user.role == 'receptionist':
-            queryset = Booking.objects.filter(apartment__property_assigned__in = user.properties_assigned.all()).order_by('-dateOfReservation')
+            # Updated to use apartments ManyToMany field
+            queryset = Booking.objects.filter(
+                apartments__property_assigned__in=user.properties_assigned.all()
+            ).distinct().order_by('-dateOfReservation')
         elif user.role in ['admin', 'manager']:
             queryset
         return queryset
     
     def get_permissions(self):
-            """
-            Override to use different permissions for destroy operation.
-            """
-            if self.request.method == 'DELETE':
-                # For DELETE, require manager or admin
-                return [IsAuthenticated(), IsAdminOrManager()]
-            else:
-                # For GET, PUT, PATCH, use the default permissions
-                return [IsAuthenticated(), IsReceptionist()]
+        """
+        Override to use different permissions for destroy operation.
+        """
+        if self.request.method == 'DELETE':
+            # For DELETE, require manager or admin
+            return [IsAuthenticated(), IsAdminOrManager()]
+        else:
+            # For GET, PUT, PATCH, use the default permissions
+            return [IsAuthenticated(), IsReceptionist()]
             
     def get_serializer_class(self):
         if self.request.method in ['PUT', 'PATCH']:
@@ -167,11 +170,10 @@ class BookingRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
         instance = self.get_object()
         
         # Get current and new data
-        current_apartment = instance.apartment
-        new_apartment_id = request.data.get('apartment')
+        current_apartments = instance.apartments.all()  # Now ManyToMany
+        new_apartment_ids = request.data.get('apartments', [])  # Expecting array of IDs
         current_status = instance.status
         new_status = request.data.get('status')
-        print('new_status', new_status)
 
         # Validate status transition
         if new_status and not self.validate_status_transition(current_status, new_status):
@@ -185,28 +187,35 @@ class BookingRetrieveUpdateDestroyAPIView(RetrieveUpdateDestroyAPIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         
-        # If trying to change apartment, check if new apartment is in service
-        if new_apartment_id and str(current_apartment.id) != str(new_apartment_id):
+        # If trying to change apartments, check if new apartments are in service
+        if new_apartment_ids:
             try:
-                new_apartment = Apartment.objects.get(id=new_apartment_id)
+                new_apartments = Apartment.objects.filter(id__in=new_apartment_ids)
                 
-                # Additional check: Cannot change apartment if already checked in
-                if current_status == 'checked_in':
-                    return Response(
-                        {"message": "Cannot change apartment for a checked-in booking"},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
+                # Check if apartments are actually changing
+                current_apartment_ids = set(current_apartments.values_list('id', flat=True))
+                new_apartment_ids_set = set(new_apartment_ids)
                 
-                if new_apartment.inService:
-                    return Response(
-                        {"message": "Cannot change to an apartment that is currently in service"},
-                        status=status.HTTP_400_BAD_REQUEST
-                    )
-
+                if current_apartment_ids != new_apartment_ids_set:
+                    # Additional check: Cannot change apartments if already checked in
+                    if current_status == 'checked_in':
+                        return Response(
+                            {"message": "Cannot change apartments for a checked-in booking"},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
                     
+                    # Check if any new apartment is in service
+                    in_service_apartments = new_apartments.filter(inService=True)
+                    if in_service_apartments.exists():
+                        apartment_numbers = [str(apt.number) for apt in in_service_apartments]
+                        return Response(
+                            {"message": f"Cannot assign apartments that are currently in service: {', '.join(apartment_numbers)}"},
+                            status=status.HTTP_400_BAD_REQUEST
+                        )
+
             except Apartment.DoesNotExist:
                 return Response(
-                    {"message": "Apartment not found"},
+                    {"message": "One or more apartments not found"},
                     status=status.HTTP_400_BAD_REQUEST
                 )
         
@@ -223,7 +232,9 @@ class BookingListAPIView(ListAPIView):
         queryset = super().get_queryset()
         user = self.request.user
         if user.role == 'receptionist':
-            queryset = Booking.objects.filter(apartment__property_assigned__in = user.properties_assigned.all()).order_by('-dateOfReservation')
+            queryset = queryset.filter(
+                apartments__property_assigned__in=user.properties_assigned.all()
+            ).distinct().order_by('-dateOfReservation')        
         elif user.role in ['admin', 'manager'] or user.is_superuser:
             queryset
         return queryset
@@ -437,6 +448,45 @@ class BookingRefundAPIView(APIView):
         except (AttributeError, TypeError, ValueError):
             return Decimal('0')
 
+class CalendarBookingsAPIView(APIView):
+    """
+    API endpoint to get bookings for calendar view
+    """
+    
+    def get(self, request):
+        try:
+            # Get date range from query parameters (optional)
+            start_date = request.GET.get('start')
+            end_date = request.GET.get('end')
+            
+            queryset = Booking.objects.all()
+            
+            # Filter by date range if provided
+            if start_date and end_date:
+                queryset = queryset.filter(
+                    Q(startDate__range=[start_date, end_date]) |
+                    Q(endDate__range=[start_date, end_date])
+                )
+            
+            # Apply user permissions
+            user = request.user
+            if user.role == 'receptionist':
+                queryset = queryset.filter(
+                    apartments__property_assigned__in=user.properties_assigned.all()
+                ).distinct()
+            elif user.role in ['technical', 'cleaning']:
+                # Only show bookings for apartments they're assigned to (if applicable)
+                pass
+            
+            serializer = BookingCalendarSerializer(queryset, many=True)
+            return Response(serializer.data, status=status.HTTP_200_OK)
+            
+        except Exception as e:
+            return Response(
+                {'error': str(e)}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+            
 class RefundListAPIView(ListAPIView):
     queryset = Refund.objects.all().select_related(
         'guest', 'reservation', 'processed_by'

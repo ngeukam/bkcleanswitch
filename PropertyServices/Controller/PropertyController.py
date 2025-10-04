@@ -26,7 +26,7 @@ class CreateListPropertyAPIView(ListCreateAPIView):
 
     def get_queryset(self):
         user = self.request.user
-        if user.role == 'admin' or user.is_superuser == True:
+        if user.role == 'admin' or user.is_superuser:
             return Property.objects.all()
         else :
             return user.properties_assigned.filter(is_active=True)
@@ -166,8 +166,8 @@ class BookingListByPropertyAPIView(ListAPIView):
         
         # Get bookings for apartments in this property
         return Booking.objects.filter(
-            apartment__property_assigned=property_obj
-        ).select_related('apartment', 'guest').order_by('-dateOfReservation')
+            apartments__property_assigned=property_obj
+        ).select_related('guest').order_by('-dateOfReservation')
     @CommonListAPIMixin.common_list_decorator(BookingListSerializer)
     def list(self, request, *args, **kwargs):
         return super().list(request, *args, **kwargs)
@@ -301,18 +301,19 @@ class PropertyStatsAPIView(APIView):
         today = timezone.now()
         current_month_start = today.replace(day=1, hour=0, minute=0, second=0, microsecond=0)
         current_month_end = current_month_start + timedelta(days=32) # A safe bet
+
         # 1. Total Number of Guests
         total_guests = Guest.objects.filter(
-            booking__apartment__property_assigned_id=property.id,
-            user__date_joined__gte=current_month_start,
-            user__date_joined__lte=current_month_end
+        booking__apartments__property_assigned_id=property.id,
+        booking__dateOfReservation__gte=current_month_start,
+        booking__dateOfReservation__lte=current_month_end
         ).distinct().count()
 
         # Count total reservations for a given property
         total_month_reservations = Booking.objects.filter(
             dateOfReservation__gte=current_month_start,
             dateOfReservation__lte=current_month_end,
-            apartment__property_assigned_id=property.id
+            apartments__property_assigned_id=property.id
         ).exclude(status__in = ['checked_in', 'checked_out']).count()
         
         # 3. Occupancy Rate
@@ -326,7 +327,7 @@ class PropertyStatsAPIView(APIView):
             status='checked_in',
             startDate__lte=today,
             endDate__gte=today,
-            apartment__id=property.id
+            apartments__id=property.id
         ).count()
         
         occupancy_rate = (occupied_apartments_today / total_apartments) * 100 if total_apartments > 0 else 0
@@ -338,16 +339,17 @@ class PropertyStatsAPIView(APIView):
         # Assumes price is stored on the Booking model or can be accessed from the Apartment
         # We'll calculate based on active bookings within the current month
         bookings_this_month = Booking.objects.filter(
-            startDate__year=current_year,
-            startDate__month=current_month,
-            apartment__id=property.id,
-            status='checked_in'
-        ).select_related('apartment')
+            dateOfReservation__gte=current_month_start,
+            dateOfReservation__lte=current_month_end,
+            apartments__property_assigned_id=property.id
+        ).prefetch_related("apartments")
         
         total_income_this_month = sum(
-            booking.apartment.price * (booking.endDate - booking.startDate).days
+            apartment.price * (booking.endDate - booking.startDate).days
             for booking in bookings_this_month
+            for apartment in booking.apartments.all()
         )
+
 
         # 5. Number of Today Check-ins
         today_start = timezone.now().replace(hour=0, minute=0, second=0, microsecond=0)
@@ -357,7 +359,7 @@ class PropertyStatsAPIView(APIView):
             status='checked_in',
             updated_at__gte=today_start,
             updated_at__lte=today_end,
-            apartment__id=property.id
+            apartments__id=property.id
         ).count()
         
         # Monthly Check ins 
@@ -365,7 +367,7 @@ class PropertyStatsAPIView(APIView):
             status='checked_in',
             updated_at__gte=current_month_start,
             updated_at__lte=current_month_end,
-            apartment__id=property.id
+            apartments__id=property.id
         ).count()
         
         # 6. Number of Guests Registered per day in the current week
@@ -380,22 +382,22 @@ class PropertyStatsAPIView(APIView):
         ).count()
         # 8. Total Reservations
         total_reservations = Booking.objects.filter(
-            apartment__property_assigned_id=property.id
+            apartments__property_assigned_id=property.id
         ).count()
         
          # 9. Total Guest
         total_register_guests = Guest.objects.filter(
-            booking__apartment__property_assigned_id=property.id,
+            booking__apartments__property_assigned_id=property.id,
         ).distinct().count()
         
         # 10. Total Booking Refund
         total_pending_booking_refunds = Refund.objects.filter(
-            reservation__apartment__property_assigned_id=property.id,
+            reservation__apartments__property_assigned_id=property.id,
             status='pending'
         ).count()
         
         guests_registered_per_day = Guest.objects.filter(
-            booking__apartment__property_assigned_id=property.id,
+            booking__apartments__property_assigned_id=property.id,
             user__date_joined__gte=start_of_week
         ).annotate(
             day_of_week=ExpressionWrapper(

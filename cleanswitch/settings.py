@@ -81,9 +81,13 @@ MIDDLEWARE = [
 SECURE_BROWSER_XSS_FILTER = True
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = 'DENY'
-# SECURE_SSL_REDIRECT = True
+SECURE_SSL_REDIRECT = True
 SESSION_COOKIE_SECURE = True
 CSRF_COOKIE_SECURE = True
+SECURE_HSTS_SECONDS = 31536000
+SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+SECURE_HSTS_PRELOAD = True
+SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
 
 # Database cache (pour les requêtes fréquentes)
 DATABASE_CACHE_TIMEOUT = 60 * 5  # 5 minutes
@@ -96,24 +100,24 @@ REST_FRAMEWORK = {
     ),
 }
 
-CACHES = {
-    'default': {
-        'BACKEND': 'django_redis.cache.RedisCache',
-        'LOCATION': os.environ.get('REDIS_URL', 'redis://localhost:6379/0'),
-        'OPTIONS': {
-            'CLIENT_CLASS': 'django_redis.client.DefaultClient',
-            'SOCKET_CONNECT_TIMEOUT': 5,
-            'SOCKET_TIMEOUT': 5,
-            'CONNECTION_POOL_KWARGS': {
-                'max_connections': 100,
-                'retry_on_timeout': True
-            },
-        },
-        'KEY_PREFIX': 'cleanswitch',
-        'TIMEOUT': 60 * 60 * 24,  # ↑↑↑ 24 HEURES pour le cache manuel
-        'VERSION': 1,
-    }
-}
+# CACHES = {
+#     'default': {
+#         'BACKEND': 'django_redis.cache.RedisCache',
+#         'LOCATION': os.environ.get('REDIS_URL', 'redis://localhost:6379/0'),
+#         'OPTIONS': {
+#             'CLIENT_CLASS': 'django_redis.client.DefaultClient',
+#             'SOCKET_CONNECT_TIMEOUT': 5,
+#             'SOCKET_TIMEOUT': 5,
+#             'CONNECTION_POOL_KWARGS': {
+#                 'max_connections': 100,
+#                 'retry_on_timeout': True
+#             },
+#         },
+#         'KEY_PREFIX': 'cleanswitch',
+#         'TIMEOUT': 60 * 60 * 24,  # ↑↑↑ 24 HEURES pour le cache manuel
+#         'VERSION': 1,
+#     }
+# }
 
 # Cache des sessions - TIMEOUT DIFFÉRENT!
 SESSION_CACHE_ALIAS = 'default'

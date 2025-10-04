@@ -40,12 +40,12 @@ class Booking(models.Model):
         ('upcoming', 'Upcoming'),
         ('active', 'Active')
     )
-    apartment = models.ForeignKey(Apartment, on_delete=models.CASCADE, null=True, related_name='apartment_booking')
+    apartments = models.ManyToManyField(Apartment, blank=True, related_name='apartments_booking')
     guest = models.ForeignKey('UserServices.Guest', null=True, on_delete=models.CASCADE)
     dateOfReservation = models.DateTimeField(default=timezone.now)
     added_by_user_id = models.ForeignKey('UserServices.User', on_delete=models.SET_NULL, blank=True, null=True, related_name='added_by_user_id_booking')
-    check_in_by_user_id=models.ForeignKey('UserServices.User',on_delete=models.SET_NULL,blank=True,null=True,related_name='check_in_by_user_id_booking')
-    check_out_by_user_id=models.ForeignKey('UserServices.User',on_delete=models.SET_NULL,blank=True,null=True,related_name='check_out_by_user_id_booking')
+    check_in_by_user_id = models.ForeignKey('UserServices.User', on_delete=models.SET_NULL, blank=True, null=True, related_name='check_in_by_user_id_booking')
+    check_out_by_user_id = models.ForeignKey('UserServices.User', on_delete=models.SET_NULL, blank=True, null=True, related_name='check_out_by_user_id_booking')
     status = models.CharField(max_length=50, choices=STATUS_TYPES, default='upcoming')
     startDate = models.DateTimeField()
     endDate = models.DateTimeField()
@@ -55,23 +55,24 @@ class Booking(models.Model):
         return Dependees.objects.filter(booking=self).count()
 
     def __str__(self):
-        return f"{self.apartment.number} - {self.apartment.name} {self.guest}"
+        # Handle ManyToMany field - get first apartment or show count
+        apartments = self.apartments.all()
+        if apartments.exists():
+            first_apartment = apartments.first()
+            return f"{first_apartment.number} - {first_apartment.name} {self.guest}"
+        return f"No apartments - {self.guest}"
     
     def save(self, *args, **kwargs):
-        # Update status based on dates
-        # now = timezone.now()
-        # if self.startDate and self.startDate > now:
-        #     self.status = 'upcoming'
-        
         super().save(*args, **kwargs)
         
-        # Update apartment status after saving
-        if self.apartment:
-            if self.status == 'checked_in':
-                self.apartment.inService = True
-            else:
-                self.apartment.inService = False
-            self.apartment.save(update_fields=['inService'])
+        # Update apartment statuses after saving
+        if self.apartments.exists():
+            for apartment in self.apartments.all():
+                if self.status == 'checked_in':
+                    apartment.inService = True
+                else:
+                    apartment.inService = False
+                apartment.save(update_fields=['inService'])
 
 class Dependees(models.Model):
     booking = models.ForeignKey(Booking, null=True, on_delete=models.CASCADE)

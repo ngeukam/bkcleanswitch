@@ -104,22 +104,23 @@ class SalaryStatusUpdateSerializer(serializers.ModelSerializer):
 
 class GuestListSerializer(serializers.ModelSerializer):
     user = UserSerializer()
-    current_apartment = serializers.SerializerMethodField()
+    recent_bookings = serializers.SerializerMethodField()
     booking_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Guest
-        fields = ['id', 'user', 'current_apartment', 'booking_count']
+        fields = ['id', 'user', 'recent_bookings', 'booking_count']
         read_only_fields = fields
 
-    def get_current_apartment(self, obj):
-        return obj.current_apartment()
+    def get_recent_bookings(self, obj):
+        recent_bookings = Booking.objects.filter(guest=obj).order_by('-startDate')[:5]
+        return BookingSerializer(recent_bookings, many=True).data
 
     def get_booking_count(self, obj):
         return obj.num_of_bookings()
 
 class BookingSerializer(serializers.ModelSerializer):
-    apartment = ApartmentSerializer(read_only=True)
+    apartments = ApartmentSerializer(many=True, read_only=True)
     added_by_user = UserSerializer(source='added_by_user_id', read_only=True)
     duration = serializers.SerializerMethodField()
     totalPrice = serializers.SerializerMethodField()
@@ -128,7 +129,7 @@ class BookingSerializer(serializers.ModelSerializer):
         model = Booking
         fields = [
             'id',
-            'apartment',
+            'apartments',  # Changed from apartment to apartments
             'guest',
             'dateOfReservation',
             'startDate',
@@ -142,7 +143,6 @@ class BookingSerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
     def get_duration(self, obj):
-        """Calculate duration in days with safety checks"""
         try:
             total_hours = (obj.endDate - obj.startDate).total_seconds() / 3600
             duration_days = math.ceil(total_hours / 24)
@@ -151,30 +151,30 @@ class BookingSerializer(serializers.ModelSerializer):
             return None
         
     def get_totalPrice(self, obj):
-        """Calculate total price with safety checks"""
         try:
-            if obj.apartment and obj.apartment.price:
-                # Calculate total hours and round up to full days
-                total_hours = (obj.endDate - obj.startDate).total_seconds() / 3600
-                duration_days = math.ceil(total_hours / 24)
-                total_price = duration_days * obj.apartment.price
-                return round(total_price, 2)
-            return None
+            # Calculate total price for all apartments
+            total_price = 0
+            for apartment in obj.apartments.all():
+                if apartment and apartment.price:
+                    total_hours = (obj.endDate - obj.startDate).total_seconds() / 3600
+                    duration_days = math.ceil(total_hours / 24)
+                    total_price += duration_days * apartment.price
+            return round(total_price, 2) if total_price > 0 else None
         except (AttributeError, TypeError):
             return None
         
+    
 class GuestDetailSerializer(serializers.ModelSerializer):
     user = UserSerializer()
     id_card_url = serializers.SerializerMethodField()
     booking_stats = serializers.SerializerMethodField()
     recent_bookings = serializers.SerializerMethodField()
-    current_apartment = serializers.SerializerMethodField()
     booking_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Guest
         fields = [
-            'id', 'user', 'id_card_url', 'booking_stats', 'recent_bookings', 'current_apartment', 'booking_count'
+            'id', 'user', 'id_card_url', 'booking_stats', 'recent_bookings', 'booking_count'
         ]
         read_only_fields = fields
 
@@ -194,9 +194,6 @@ class GuestDetailSerializer(serializers.ModelSerializer):
         recent_bookings = Booking.objects.filter(guest=obj).order_by('-startDate')[:5]
         return BookingSerializer(recent_bookings, many=True).data
     
-    def get_current_apartment(self, obj):
-        return obj.current_apartment()
-
     def get_booking_count(self, obj):
         return obj.num_of_bookings()
 

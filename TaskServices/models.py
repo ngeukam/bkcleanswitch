@@ -22,7 +22,12 @@ class TaskTemplate(models.Model):
         help_text="Estimated duration needed per occurrence"
     )
     priority = models.CharField(max_length=20, choices=PRIORITY_CHOICES)
-    default_apartment = models.ForeignKey(Apartment, on_delete=models.CASCADE, related_name='apartment_task_template', blank=True, null=True)
+    # default_apartment = models.ForeignKey(Apartment, on_delete=models.CASCADE, related_name='apartment_task_template', blank=True, null=True)
+    default_apartments = models.ManyToManyField(
+        Apartment, 
+        related_name='apartment_task_templates', 
+        blank=True,
+    )
     default_property = models.ForeignKey(Property, on_delete=models.CASCADE, related_name='property_task_template', blank=True, null=True)
     active = models.BooleanField(default=True)
     default_assignees = models.ManyToManyField(User, blank=True)
@@ -45,7 +50,12 @@ class Task(models.Model):
     duration = models.DecimalField(max_digits=4, decimal_places=1, blank=True, null=True)
     assigned_to = models.ManyToManyField(User, related_name='user_tasks', blank=True)
     property_assigned = models.ForeignKey(Property, on_delete=models.CASCADE, related_name='property_tasks', blank=True, null=True)
-    apartment_assigned = models.ForeignKey(Apartment, on_delete=models.CASCADE, related_name='apartment_tasks', blank=True, null=True)
+    # apartment_assigned = models.ForeignKey(Apartment, on_delete=models.CASCADE, related_name='apartment_tasks', blank=True, null=True)
+    apartments_assigned = models.ManyToManyField(
+        Apartment, 
+        related_name='apartment_tasks', 
+        blank=True,
+    )
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
     added_by_user_id = models.ForeignKey(
         User,

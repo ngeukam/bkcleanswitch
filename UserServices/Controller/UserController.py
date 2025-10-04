@@ -60,16 +60,16 @@ class CreateUserAPIView(APIView):
         phone = data.get('phone')
         department = data.get('department', '')
         properties_assigned = data.get('properties_assigned')
-        payType = data.get('payType')
-        payRate = data.get('payRate')
-        currency = data.get('currency')
+        payType = data.get('payType', '')
+        payRate = data.get('payRate', 0)
+        currency = data.get('currency', '')
         user = request.user
         if(user.role == 'manager' and role in ['admin', 'super admin']):
             return Response(
                 {'message': 'You cannot create admin user'}, 
                 status=status.HTTP_403_FORBIDDEN
             )
-        if not all([username, first_name, last_name, password, role, email, phone, properties_assigned]):
+        if not all([username, first_name, last_name, password, role, phone]):
             return Response(
                 {'message': 'All fields are required'}, 
                 status=status.HTTP_400_BAD_REQUEST
@@ -135,7 +135,7 @@ class CreateUserAPIView(APIView):
             )
         except Exception as e:
             return Response(
-                {'message': 'An error occurred while creating user '},
+                {'message': str(e)},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
