@@ -31,7 +31,7 @@ class ListUserAPIView(ListAPIView):
     queryset = User.objects.all()
     serializer_class = UserSerializerWithFilters
     permission_classes = [IsAuthenticated]
-    
+    pagination_class = CustomPageNumberPagination
     def get_queryset(self):
         queryset = super().get_queryset()
         user = self.request.user
