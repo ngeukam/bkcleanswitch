@@ -192,6 +192,10 @@ class UpdateUserAPIView(APIView):
                     user.department = data['department']
                 if 'currency' in data:
                     user.currency = data['currency']
+                
+                # Handle payrules
+                payRate = None
+                payType = None
                 if 'payrules' in data:
                     payRate = data['payrules']['payRate']
                     payType = data['payrules']['payType']
@@ -201,12 +205,13 @@ class UpdateUserAPIView(APIView):
                     user.is_active = bool(data['is_active'])
                 
                 # Handle password change
-                if user.password == data['password']:
-                    pass
-                else:
-                    password = data['password']
-                    if password and not user.check_password(password):
-                        user.set_password(password)
+                if 'password' in data:
+                    if user.password == data['password']:
+                        pass
+                    else:
+                        password = data['password']
+                        if password and not user.check_password(password):
+                            user.set_password(password)
                 
                 # Handle properties assignment
                 if 'properties_assigned' in data:
@@ -216,7 +221,15 @@ class UpdateUserAPIView(APIView):
                 
                 user.save()
                 
-                PayRule.objects.filter(user_id = user.id).update(payType = payType, payRate = payRate)
+                # Handle PayRule - update if exists, create if doesn't exist
+                if payRate is not None and payType is not None:
+                    payrule, created = PayRule.objects.update_or_create(
+                        user_id=user.id,
+                        defaults={
+                            'payType': payType,
+                            'payRate': payRate
+                        }
+                    )
                 
                 return Response({
                     'message': 'User updated successfully',
@@ -232,7 +245,6 @@ class UpdateUserAPIView(APIView):
                 status=status.HTTP_400_BAD_REQUEST
             )
         except Exception as e:
-            print(f'Error {"patching" if partial else "updating"} user:', e)
             return Response(
                 {'message': f'An error occurred while {"patching" if partial else "updating"} user'},
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
@@ -1059,12 +1071,14 @@ class CompletedTaskSalaryPreviewAPIView(APIView):
             ).first()
 
             if hourly_rule:
-                total_hours = Task.objects.filter(
+                total_minutes = Task.objects.filter(
                     assigned_to=user,
                     status="completed",
                     updated_at__date__range=(start_date, end_date)
-                ).aggregate(total_hours=Sum("duration")/60)["total_hours"] or 0
-                total_salary += float(hourly_rule.payRate) * float(total_hours)
+                ).aggregate(total_minutes=Sum("duration"))["total_minutes"] or 0
+                
+                total_hours = float(total_minutes) / 60.0
+                total_salary += float(hourly_rule.payRate) * total_hours
 
             # Check if salary already exists for this period (overlap)
             overlap_exists = Salary.objects.filter(
