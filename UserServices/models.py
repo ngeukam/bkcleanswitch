@@ -1,3 +1,4 @@
+import math
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from PropertyServices.models import Property
@@ -42,13 +43,25 @@ class Guest(models.Model):
         return Booking.objects.filter(guest=self).count()
 
     def total_days_stayed(self):
+        """Calculate total days stayed across all bookings"""
         bookings = Booking.objects.filter(guest=self)
-        return sum((b.endDate - b.startDate).days for b in bookings)
+        total_days = 0
+        
+        for booking in bookings:
+            # Calculate difference in days, adding 1 to include both start and end dates
+            days_stayed = (booking.endDate - booking.startDate).days + 1
+            total_days += days_stayed
+        
+        return total_days
 
     def last_booking_days(self):
+        """Calculate days stayed in the most recent booking"""
         booking = Booking.objects.filter(guest=self).order_by('-startDate').first()
+        
         if booking:
-            return (booking.endDate - booking.startDate).days
+            # Add 1 to include both start and end dates
+            return (booking.endDate - booking.startDate).days + 1
+        
         return 0
 
     def current_apartment(self):
