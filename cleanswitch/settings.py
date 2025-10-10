@@ -34,12 +34,14 @@ ALLOWED_HOSTS = os.getenv("DJANGO_ALLOWED_HOSTS").split(",")
 
 # ALLOWED_HOSTS = ['*']
 
-# CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = False
 
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:3000",  # Flutter web
     "http://10.0.2.2:8000",  # Android emulator (Django default port)
     "http://127.0.0.1:8000",  # Local Django server
+    "https://vmi2775459.contaboserver.net:8443",
+    "https://vmi2775459.contaboserver.net"
 ]
 
 
