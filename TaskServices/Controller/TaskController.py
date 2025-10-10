@@ -20,24 +20,28 @@ class TaskListCreateAPIView(generics.ListCreateAPIView):
     def get_queryset(self):
         queryset = super().get_queryset()
         user = self.request.user
-        assigned_to = self.request.query_params.get('assigned_to')
-        
+        assigned_to_id = self.request.query_params.get('assigned_to')
         # Filter by template if needed
         template_id = self.request.query_params.get('template_id')
         if template_id:
             queryset = queryset.filter(template_id=template_id)
         
         # Filter by apartment if needed
-        apartment_id = self.request.query_params.get('apartment')
-        if apartment_id:
-            queryset = queryset.filter(apartments_assigned__id=apartment_id)  # Updated to ManyToMany
+        apartment_id = self.request.query_params.get('apartments_assigned')
         
-        if assigned_to and user.role in ["technical", "cleaning"]:
+        if apartment_id:
             queryset = queryset.filter(
-                assigned_to__id=assigned_to, 
+                apartments_assigned__id=apartment_id, 
+                property_assigned__is_active=True, 
+                active=True
+            )  # Updated to ManyToMany
+        if assigned_to_id and user.role in ["technical", "cleaning"]:
+            queryset = queryset.filter(
+                assigned_to__id=assigned_to_id, 
                 property_assigned__is_active=True, 
                 active=True
             )
+       
         elif user.role == "manager":
             queryset = queryset.filter(property_assigned__is_active=True)
         elif user.role == "admin" or user.is_superuser == True:
@@ -51,7 +55,7 @@ class TaskListCreateAPIView(generics.ListCreateAPIView):
         else:
             queryset = queryset.none()
 
-        return queryset.distinct().order_by('-created_at')  # Added distinct() for ManyToMany
+        return queryset.distinct().order_by('-created_at')
 
     def perform_create(self, serializer):
         user = self.request.user
@@ -138,12 +142,13 @@ class TaskRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
         
     def partial_update(self, request, *args, **kwargs):
         task = self.get_object()
+        user = request.user
         
-        # Permission checks (keep your existing ones)
+        # Permission checks
         if not (request.user in task.assigned_to.all() or request.user == task.added_by_user_id):
             return Response({'message': 'Permission denied.'}, status=status.HTTP_403_FORBIDDEN)
 
-        if task.status == 'completed':
+        if task.status == 'completed' and user.role!='admin':
             return Response({'message': 'Completed tasks cannot be modified.'}, status=status.HTTP_400_BAD_REQUEST)
 
         new_status = request.data.get('status')
@@ -152,7 +157,17 @@ class TaskRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
                             status=status.HTTP_400_BAD_REQUEST)
 
         taskStatus = self.request.data.get('status')
-        apartmentIds = self.request.data.get('apartments_assigned', [])  # Changed to handle array
+        apartmentIds = self.request.data.get('apartments_assigned', [])
+        
+        # Convert apartment IDs to integers if they're strings
+        if apartmentIds and isinstance(apartmentIds, list):
+            try:
+                apartmentIds = [int(apt_id) for apt_id in apartmentIds if apt_id]
+            except (ValueError, TypeError):
+                return Response(
+                    {'message': 'Invalid apartment IDs provided.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
         
         # Handle apartment cleaning status when task is completed
         if taskStatus == 'completed' and apartmentIds:
@@ -162,7 +177,20 @@ class TaskRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
         # Handle gallery images separately
         gallery_images = request.data.pop('gallery_images', None)
         
-        # Perform the standard update first
+        # Handle assigned_to conversion if needed
+        assigned_to_ids = request.data.get('assigned_to', None)
+      
+        if assigned_to_ids and isinstance(assigned_to_ids, list):
+            try:
+                assigned_to_ids = [int(user_id) for user_id in assigned_to_ids if user_id]
+                request.data['assigned_to'] = assigned_to_ids
+            except (ValueError, TypeError):
+                return Response(
+                    {'message': 'Invalid user IDs provided.'},
+                    status=status.HTTP_400_BAD_REQUEST
+                )
+        
+        # Perform the standard update
         response = super().partial_update(request, *args, **kwargs)
         
         # If there are gallery images to process
@@ -188,9 +216,6 @@ class TaskRetrieveUpdateDestroyAPIView(generics.RetrieveUpdateDestroyAPIView):
         return response
 
     def perform_destroy(self, instance):
-        # if instance.status == 'completed':
-        #     raise exceptions.PermissionDenied("Completed tasks cannot be deleted.")
-        
         if not (self.request.user.role == 'admin' or 
             (self.request.user.role == 'manager' and 
                 instance.property_assigned.added_by_user_id == self.request.user)):

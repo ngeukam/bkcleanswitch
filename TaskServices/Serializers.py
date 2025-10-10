@@ -53,12 +53,15 @@ class TaskGalleriSerializer(serializers.ModelSerializer):
 class TaskSerializerWithFilters(serializers.ModelSerializer):
     gallery_images = TaskGalleriSerializer(many=True, read_only=True, source='gallery_task')
     due_date = serializers.DateTimeField(format='%Y-%m-%d %H:%M:%S')
-    assigned_to = UserSimpleSerializer(many=True, read_only=True)
+    assigned_to = serializers.PrimaryKeyRelatedField(
+        queryset=User.objects.all(),
+        many=True,
+        required=False
+    )
 
     property_assigned = serializers.PrimaryKeyRelatedField(queryset=Property.objects.all())
     property_info = PropertySimpleSerializer(read_only=True, source='property_assigned')
 
-    # 🔹 Many-to-Many Apartments
     apartments_assigned = serializers.PrimaryKeyRelatedField(
         queryset=Apartment.objects.all(),
         many=True,
@@ -103,6 +106,22 @@ class TaskSerializerWithFilters(serializers.ModelSerializer):
 
     def get_added_by_user_id(self, obj):
         return obj.added_by_user_id.username if obj.added_by_user_id else None
+
+    def update(self, instance, validated_data):
+        # Handle apartments_assigned separately
+        apartments_data = validated_data.pop('apartments_assigned', None)
+        users_data = validated_data.pop('assigned_to', None)
+        
+        # Update other fields
+        instance = super().update(instance, validated_data)
+        
+        # Update apartments if provided
+        if apartments_data is not None:
+            instance.apartments_assigned.set(apartments_data)
+        if users_data is not None:
+            instance.assigned_to.set(users_data)
+        
+        return instance
 
 class TaskCalendarSerializer(serializers.ModelSerializer):
     title = serializers.SerializerMethodField()

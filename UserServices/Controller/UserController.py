@@ -69,9 +69,28 @@ class CreateUserAPIView(APIView):
                 {'message': 'You cannot create admin user'}, 
                 status=status.HTTP_403_FORBIDDEN
             )
-        if not all([username, first_name, last_name, password, role, phone]):
+        missing_fields = []
+
+        if not username:
+            missing_fields.append("username")
+        if not first_name:
+            missing_fields.append("first_name")
+        if not last_name:
+            missing_fields.append("last_name")
+        if not password:
+            missing_fields.append("password")
+        if not role:
+            missing_fields.append("role")
+        if not phone:
+            missing_fields.append("phone")
+        if not properties_assigned:
+            missing_fields.append("properties_assigned")
+
+        if missing_fields:
             return Response(
-                {'message': 'All fields are required'}, 
+                {
+                    'message': f"The following required field(s) are missing: {', '.join(missing_fields)}"
+                },
                 status=status.HTTP_400_BAD_REQUEST
             )
 
@@ -440,7 +459,7 @@ class RecentTasksAPIView(APIView):
         # Format the response
         results = []
         for task in tasks:
-            time_diff = timezone.now() - task.updated_at
+            time_diff = timezone.now() - task.created_at
             if time_diff.days > 0:
                 time_text = f"{time_diff.days} day{'s' if time_diff.days > 1 else ''} ago"
             else:

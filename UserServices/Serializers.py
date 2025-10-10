@@ -241,7 +241,7 @@ class GuestCreateUpdateSerializer(serializers.ModelSerializer):
         password = validated_data.get('password', 
             f"{validated_data['first_name']}{validated_data['last_name']}")
 
-        user = User.objects.create_user(**user_data, password=password)
+        user = User.objects.create_user(**user_data, password=password, added_by_user_id=self.context['request'].user)
 
         # Create Guest
         guest = Guest.objects.create(

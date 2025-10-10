@@ -14,5 +14,5 @@ urlpatterns = [
     path('refunds/', ApartmentController.RefundListAPIView.as_view(), name='refunds'),
     path('refunds/<int:pk>/', ApartmentController.RefundRetrieveUpdateDeleteAPIView.as_view(), name='refund-retrieve-update'),
     path('calendar/bookings/', ApartmentController.CalendarBookingsAPIView.as_view(), name='calendar-bookings'),
-
+    path('bookings/apartments-tasks/', ApartmentController.BookingApartmentTasksAPIView.as_view(), name='booking-apartments-tasks'),
 ]

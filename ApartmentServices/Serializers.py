@@ -31,27 +31,63 @@ class ApartmentSerializer(serializers.ModelSerializer):
 
     def validate(self, data):
         instance = self.instance  # This is None during creation, existing instance during update
+        
+        # Required fields validation for create operation
+        if instance is None:
+            required_fields = [
+                'name', 'property_assigned', 'apartmentType',
+                'capacity', 'numberOfBeds', 'price', 'currency'
+            ]
+            
+            missing_fields = []
+            for field in required_fields:
+                if field not in data or data[field] is None:
+                    missing_fields.append(field)
+            
+            if missing_fields:
+                raise serializers.ValidationError({
+                    'message': f'The following fields are required: {", ".join(missing_fields)}'
+                })
+            
+            # Validate numeric fields for positive values
+            if data.get('capacity', 0) <= 0:
+                raise serializers.ValidationError({
+                    'message': 'Capacity must be greater than 0'
+                })
+            
+            if data.get('numberOfBeds', 0) <= 0:
+                raise serializers.ValidationError({
+                    'message': 'Number of beds must be greater than 0'
+                })
+            
+            if data.get('price', 0) <= 0:
+                raise serializers.ValidationError({
+                    'message': 'Price must be greater than 0'
+                })
+
+        # Existing duplicate validation logic
         number = data.get('number')
         property_assigned = data.get('property_assigned')
-        
-        # Skip validation if number isn't being changed
-        if instance and number == instance.number and property_assigned == instance.property_assigned:
-            return data
+        if number is None or property_assigned is None:
+            # Skip duplicate validation if number isn't being changed
+            if instance and number == instance.number and property_assigned == instance.property_assigned:
+                return data
+                
+            # Check for duplicate apartment number in the same property
+            qs = Apartment.objects.filter(
+                number=number,
+                property_assigned=property_assigned
+            )
             
-        # Check for duplicate apartment number in the same property
-        qs = Apartment.objects.filter(
-            number=number,
-            property_assigned=property_assigned
-        )
+            # If updating, exclude current instance from the check
+            if instance:
+                qs = qs.exclude(pk=instance.pk)
+                
+            if qs.exists():
+                raise serializers.ValidationError({
+                    'message': 'This apartment number already exists for the selected property'
+                })
         
-        # If updating, exclude current instance from the check
-        if instance:
-            qs = qs.exclude(pk=instance.pk)
-            
-        if qs.exists():
-            raise serializers.ValidationError({
-                'message': 'This apartment number already exists for the selected property'
-            })
         return data
 
     def create(self, validated_data):
@@ -286,7 +322,6 @@ class BookingCreateSerializer(serializers.ModelSerializer):
         start_date = attrs.get("startDate")
         end_date = attrs.get("endDate")
         apartments = attrs.get("apartments", [])
-        status = attrs.get("status")
         
         # if status == "upcoming" and start_date < timezone.now():
         #     raise serializers.ValidationError("You cannot set Upcoming when start date is in the past.")

@@ -11,10 +11,12 @@ from ApartmentServices.models import Apartment, Booking, Refund
 from cleanswitch.Helpers import CustomPageNumberPagination, CommonListAPIMixin
 from PropertyServices.models import Property
 from UserServices.Serializers import UserSerializer
+from TaskServices.models import Task
 from cleanswitch.permissions import IsAdmin, IsAdminOrManager, IsReceptionist
 from rest_framework.views import APIView
 from rest_framework.exceptions import PermissionDenied
-from django.db.models import Q, Sum
+from django.db.models import Q, Exists, OuterRef, Sum
+from django.db.models import Prefetch
 
 class CreateListApartmentAPIView(ListCreateAPIView):
     serializer_class = ApartmentSerializer
@@ -526,3 +528,107 @@ class RefundRetrieveUpdateDeleteAPIView(RetrieveUpdateDestroyAPIView):
         if instance.status == "pending":
             serializer.validated_data['updated_by'] = self.request.user
         serializer.save()
+
+class BookingApartmentTasksAPIView(APIView):
+    
+    def get(self, request):
+        try:
+            booking_status = request.GET.get('status')
+            has_tasks = request.GET.get('has_tasks')
+            task_status = request.GET.get('task_status')
+            property_id = request.GET.get('property_id')
+            start_date_from = request.GET.get('start_date_from')
+            start_date_to = request.GET.get('start_date_to')
+            end_date_from = request.GET.get('end_date_from')
+            end_date_to = request.GET.get('end_date_to')
+            # Prefetch apartments with tasks information
+            task_filter = Q(active=True)
+            if task_status:
+                task_filter &= Q(status=task_status)
+            
+            apartments_prefetch = Prefetch(
+                'apartments',
+                queryset=Apartment.objects.annotate(
+                    has_planned_tasks=Exists(
+                        Task.objects.filter(
+                            apartments_assigned=OuterRef('pk'),
+                            active=True,
+                            status__in=['pending', 'in_progress']
+                        )
+                    )
+                ).prefetch_related(
+                    Prefetch(
+                        'apartment_tasks',
+                        queryset=Task.objects.filter(task_filter,  status__in=['pending', 'in_progress']).prefetch_related('assigned_to')
+                    )
+                )
+            )
+            
+            # Get bookings
+            bookings = Booking.objects.all().prefetch_related(
+                apartments_prefetch,
+                'guest'
+            )
+            
+            if booking_status:
+                bookings = bookings.filter(status=booking_status)
+            
+            if property_id:
+                bookings = bookings.filter(apartments__property_assigned_id=property_id)
+                
+             # Apply date filters
+            if start_date_from:
+                bookings = bookings.filter(startDate__gte=start_date_from)
+            
+            if start_date_to:
+                bookings = bookings.filter(startDate__lte=start_date_to)
+            
+            if end_date_from:
+                bookings = bookings.filter(endDate__gte=end_date_from)
+            
+            if end_date_to:
+                bookings = bookings.filter(endDate__lte=end_date_to)
+            
+            result = []
+            for booking in bookings:
+                booking_data = BookingListSerializer(booking).data
+                
+                apartments_info = []
+                for apartment in booking.apartments.all():
+                    # Apply has_tasks filter
+                    if has_tasks is not None:
+                        has_tasks_bool = has_tasks.lower() == 'true'
+                        if has_tasks_bool != apartment.has_planned_tasks:
+                            continue
+                    
+                    apartment_info = ApartmentSerializer(apartment).data
+                    apartment_info['has_planned_tasks'] = getattr(apartment, 'has_planned_tasks', False)
+                    
+                    # Include task details if apartment has tasks
+                    if apartment_info['has_planned_tasks']:
+                        apartment_info['tasks'] = []
+                        for task in apartment.apartment_tasks.all():
+                            apartment_info['tasks'].append({
+                                'id': task.id,
+                                'title': task.title,
+                                'status': task.status,
+                                'priority': task.priority,
+                                'due_date': task.due_date,
+                                'assigned_to': [f"{user.first_name} {user.last_name}" for user in task.assigned_to.all()],
+                                'description': task.description
+                            })
+                    
+                    apartments_info.append(apartment_info)
+                booking_data['apartments_with_tasks_info'] = apartments_info
+                result.append(booking_data)
+            return Response({
+                'status': 'success',
+                'count': len(result)-1,
+                'bookings': result
+            })
+            
+        except Exception as e:
+            return Response({
+                'status': 'error',
+                'message': str(e)
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
